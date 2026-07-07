@@ -436,6 +436,33 @@
       align-items: center;
     }
 
+    /* ---------- Year filter ---------- */
+    .year-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .year-chip {
+      border: 1px solid var(--line-strong);
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 600;
+      padding: 8px 18px;
+      min-height: 40px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-variant-numeric: tabular-nums;
+      transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.05s;
+    }
+    .year-chip:hover { background: var(--surface-2); }
+    .year-chip:active { transform: scale(0.97); }
+    .year-chip[aria-selected="true"] {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: #fff;
+    }
+
     /* ---------- Toast ---------- */
     .toast-wrap {
       position: fixed;
@@ -522,7 +549,8 @@
       <div class="brand">上班收钱模拟器</div>
       <div class="tabs" role="tablist">
         <button class="tab" role="tab" aria-selected="true" data-view="console" type="button">主控台</button>
-        <button class="tab" role="tab" aria-selected="false" data-view="settings" type="button">设置与记录</button>
+        <button class="tab" role="tab" aria-selected="false" data-view="settings" type="button">设置</button>
+        <button class="tab" role="tab" aria-selected="false" data-view="records" type="button">记录</button>
       </div>
       <div class="clock" id="clockNow">--</div>
     </div>
@@ -575,7 +603,7 @@
       </div>
     </section>
 
-    <!-- ============ 设置与记录 ============ -->
+    <!-- ============ 设置 ============ -->
     <section class="view" id="view-settings">
       <div class="card">
         <h2>个人设置</h2>
@@ -605,35 +633,6 @@
       </div>
 
       <div class="card">
-        <h2>补录历史上班</h2>
-        <p class="sub">忘记打卡？在这里手动补上一条记录。</p>
-        <div class="grid">
-          <label>日期
-            <input id="manualDate" type="date" />
-          </label>
-          <label>上班时间
-            <input id="manualStart" type="time" value="09:00" />
-          </label>
-          <label>下班时间
-            <input id="manualEnd" type="time" value="18:00" />
-          </label>
-          <label>暂停分钟数
-            <input id="manualBreak" type="number" min="0" value="60" />
-          </label>
-        </div>
-        <div class="form-actions">
-          <button class="btn btn-accent" id="manualAddBtn" type="button">写入历史记录</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <h2>政策与月收入概览</h2>
-        <p class="sub" id="monthSummaryText">--</p>
-        <div class="policy" id="policyGrid"></div>
-        <div class="month-cards" id="monthCards"></div>
-      </div>
-
-      <div class="card">
         <h2>云同步（多设备）</h2>
         <p class="sub">用同一个同步码，在其它电脑、手机或微信里打开同一份数据。</p>
         <div style="display:flex; gap:28px; flex-wrap:wrap; margin-bottom:16px;">
@@ -660,6 +659,46 @@
           <button class="btn btn-danger btn-sm" id="disableSyncBtn" type="button">停止同步</button>
         </div>
         <div class="meta" id="syncMeta" style="margin-top:10px;">—</div>
+      </div>
+    </section>
+
+    <!-- ============ 记录 ============ -->
+    <section class="view" id="view-records">
+      <div class="card">
+        <div class="table-head">
+          <h2>按年查看</h2>
+          <span class="meta" id="yearStats">--</span>
+        </div>
+        <div class="year-tabs" id="yearTabs"></div>
+      </div>
+
+      <div class="card">
+        <h2>补录历史上班</h2>
+        <p class="sub">忘记打卡？在这里手动补上一条记录。</p>
+        <div class="grid">
+          <label>日期
+            <input id="manualDate" type="date" />
+          </label>
+          <label>上班时间
+            <input id="manualStart" type="time" value="09:00" />
+          </label>
+          <label>下班时间
+            <input id="manualEnd" type="time" value="18:00" />
+          </label>
+          <label>暂停分钟数
+            <input id="manualBreak" type="number" min="0" value="60" />
+          </label>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-accent" id="manualAddBtn" type="button">写入历史记录</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>政策与月收入概览</h2>
+        <p class="sub" id="monthSummaryText">--</p>
+        <div class="policy" id="policyGrid"></div>
+        <div class="month-cards" id="monthCards"></div>
       </div>
 
       <div class="card">
@@ -718,6 +757,7 @@
     let syncCode = null;
     let pushTimer = null;
     let isApplyingRemote = false;
+    let selectedYear = 'all';
 
     const REGION_LIBRARY = {
       beijing: { name: '北京', pension: 16, medical: 10, unemployment: 0.5, injury: 0.2, maternity: 0.8, fundRange: '5%-12%' },
@@ -820,6 +860,15 @@
         const target = e.target.closest('[data-del]');
         if (target) { deleteHistory(target.dataset.del); }
       });
+      // Year filter (event delegation)
+      $('yearTabs').addEventListener('click', (e) => {
+        const chip = e.target.closest('[data-year]');
+        if (!chip) { return; }
+        selectedYear = chip.dataset.year;
+        renderYearTabs();
+        renderSummary();
+        renderHistory();
+      });
       // Cloud sync
       $('enableSyncBtn').addEventListener('click', enableSync);
       $('connectSyncBtn').addEventListener('click', connectSync);
@@ -836,13 +885,14 @@
       });
       $('view-console').classList.toggle('active', name === 'console');
       $('view-settings').classList.toggle('active', name === 'settings');
+      $('view-records').classList.toggle('active', name === 'records');
       try { localStorage.setItem(VIEW_KEY, name); } catch (err) { /* ignore */ }
     }
 
     function restoreView() {
       let saved = 'console';
       try { saved = localStorage.getItem(VIEW_KEY) || 'console'; } catch (err) { /* ignore */ }
-      if (saved !== 'console' && saved !== 'settings') { saved = 'console'; }
+      if (!['console', 'settings', 'records'].includes(saved)) { saved = 'console'; }
       switchView(saved);
     }
 
@@ -1022,6 +1072,7 @@
       });
 
       persist();
+      renderYearTabs();
       renderHistory();
       renderSummary();
       renderRuntime();
@@ -1034,6 +1085,7 @@
       if (!confirm(`确定要删除 ${label} 吗？此操作不可撤销。`)) { return; }
       state.history = state.history.filter((r) => r.id !== id);
       persist();
+      renderYearTabs();
       renderHistory();
       renderSummary();
       renderRuntime();
@@ -1045,6 +1097,7 @@
       if (!confirm('确定要清空全部历史上班记录吗？此操作不可撤销。')) { return; }
       state.history = [];
       persist();
+      renderYearTabs();
       renderHistory();
       renderSummary();
       renderRuntime();
@@ -1273,6 +1326,7 @@
     function renderAll() {
       renderPolicy();
       renderRuntime();
+      renderYearTabs();
       renderHistory();
       renderSummary();
       updateSettingInputsFromState();
@@ -1378,12 +1432,40 @@
       $('careerTotal').textContent = formatCurrency(calculateCareerTotalIncome());
     }
 
+    function renderYearTabs() {
+      const el = $('yearTabs');
+      if (!el) { return; }
+      const years = new Set();
+      buildMonthCards().forEach((c) => years.add(c.month.slice(0, 4)));
+      state.history.forEach((r) => { if (r.date) { years.add(r.date.slice(0, 4)); } });
+      const sorted = [...years].sort((a, b) => b.localeCompare(a));
+      if (selectedYear !== 'all' && !years.has(selectedYear)) { selectedYear = 'all'; }
+
+      el.innerHTML = ['all', ...sorted]
+        .map((y) => {
+          const label = y === 'all' ? '全部' : `${y} 年`;
+          const sel = String(selectedYear === y);
+          return `<button class="year-chip" type="button" role="tab" aria-selected="${sel}" data-year="${y}">${label}</button>`;
+        })
+        .join('');
+
+      const scopeCards = selectedYear === 'all'
+        ? buildMonthCards()
+        : buildMonthCards().filter((c) => c.month.startsWith(`${selectedYear}-`));
+      const theoryTotal = scopeCards.reduce((sum, m) => sum + m.theoryTotal, 0);
+      const scopeLabel = selectedYear === 'all' ? '全部年份' : `${selectedYear} 年`;
+      $('yearStats').textContent = `${scopeLabel} · 理论总收入 ${formatCurrency(theoryTotal)}`;
+    }
+
     function renderHistory() {
       const body = $('historyBody');
-      if (state.history.length === 0) {
+      const list = selectedYear === 'all'
+        ? state.history
+        : state.history.filter((r) => r.date && r.date.startsWith(`${selectedYear}-`));
+      if (list.length === 0) {
         body.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#6e6e73;padding:20px;">暂无历史记录，去主控台点开始上班吧。</td></tr>';
       } else {
-        body.innerHTML = state.history
+        body.innerHTML = list
           .slice(0, 300)
           .map((r) => {
             const tagClass = r.source === '实时打卡' ? 'tag tag-live' : 'tag';
@@ -1403,12 +1485,16 @@
           .join('');
       }
 
-      const totalEarned = state.history.reduce((sum, r) => sum + (r.earned || 0), 0);
-      $('historyStats').textContent = `${state.history.length} 条记录，累计入账 ${formatCurrency(totalEarned)}`;
+      const totalEarned = list.reduce((sum, r) => sum + (r.earned || 0), 0);
+      const scopeLabel = selectedYear === 'all' ? '' : `${selectedYear} 年 · `;
+      $('historyStats').textContent = `${scopeLabel}${list.length} 条记录，累计入账 ${formatCurrency(totalEarned)}`;
     }
 
     function renderSummary() {
-      const cards = buildMonthCards();
+      const allCards = buildMonthCards();
+      const cards = selectedYear === 'all'
+        ? allCards
+        : allCards.filter((c) => c.month.startsWith(`${selectedYear}-`));
       $('monthCards').innerHTML = cards
         .slice(-18)
         .reverse()
@@ -1425,7 +1511,10 @@
 
       if (cards.length > 0) {
         const totalTheory = cards.reduce((sum, m) => sum + m.theoryTotal, 0);
-        $('monthSummaryText').textContent = `从 ${state.settings.employmentStartDate} 到今天：理论总收入（含公积金）${formatCurrency(totalTheory)}。`;
+        const scope = selectedYear === 'all'
+          ? `从 ${state.settings.employmentStartDate} 到今天`
+          : `${selectedYear} 年`;
+        $('monthSummaryText').textContent = `${scope}：理论总收入（含公积金）${formatCurrency(totalTheory)}。`;
       } else {
         $('monthSummaryText').textContent = '暂无可统计的月份。';
       }
