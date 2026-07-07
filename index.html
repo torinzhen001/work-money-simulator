@@ -2,7 +2,12 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#fbfbfd" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="上班收钱" />
+  <meta name="format-detection" content="telephone=no" />
   <title>上班收钱模拟器</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
@@ -25,7 +30,7 @@
       --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 8px 24px rgba(0, 0, 0, 0.06);
     }
 
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
     html, body {
       margin: 0;
@@ -37,6 +42,8 @@
         'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
       -webkit-font-smoothing: antialiased;
       line-height: 1.5;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
     }
 
     button, input, select { font-family: inherit; }
@@ -47,13 +54,17 @@
       top: 0;
       z-index: 100;
       background: rgba(251, 251, 253, 0.86);
+      -webkit-backdrop-filter: saturate(180%) blur(18px);
       backdrop-filter: saturate(180%) blur(18px);
       border-bottom: 1px solid var(--line);
+      padding-top: env(safe-area-inset-top);
     }
     .nav-inner {
       max-width: 1040px;
       margin: 0 auto;
       padding: 10px 20px;
+      padding-left: max(20px, env(safe-area-inset-left));
+      padding-right: max(20px, env(safe-area-inset-right));
       display: flex;
       align-items: center;
       gap: 16px;
@@ -465,11 +476,43 @@
     .modal h3 { margin: 0 0 12px; font-size: 18px; }
     .modal p { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
 
+    /* ---------- iOS / 手机适配 ---------- */
+    .wrap {
+      padding-left: max(20px, env(safe-area-inset-left));
+      padding-right: max(20px, env(safe-area-inset-right));
+      padding-bottom: max(64px, calc(48px + env(safe-area-inset-bottom)));
+    }
+    .toast-wrap {
+      right: max(20px, env(safe-area-inset-right));
+      bottom: max(20px, calc(16px + env(safe-area-inset-bottom)));
+    }
+
+    @media (max-width: 768px) {
+      .nav-inner { gap: 10px; padding-top: 8px; padding-bottom: 8px; }
+      .brand { font-size: 16px; }
+      .tabs { margin-left: auto; }
+      .clock { flex-basis: 100%; margin-left: 0; text-align: right; }
+    }
+
     @media (max-width: 560px) {
-      .wrap { padding: 20px 14px 48px; }
-      .card { padding: 18px; }
-      .controls { grid-template-columns: 1fr; }
+      .wrap { padding-top: 18px; padding-bottom: max(40px, calc(32px + env(safe-area-inset-bottom))); }
+      .card { padding: 18px; margin-bottom: 16px; }
+      .card h2 { font-size: 18px; }
+      .brand { font-size: 15px; }
+      .tabs { flex-basis: 100%; margin-left: 0; justify-content: center; }
       .clock { display: none; }
+      .controls { grid-template-columns: 1fr; }
+      .stage { padding: 32px 18px; }
+      .kpi { grid-template-columns: 1fr 1fr; }
+      /* iOS 输入框 ≥ 16px 防止聚焦时自动放大 */
+      input, select { font-size: 16px; }
+      .form-actions { gap: 10px; }
+      .form-actions .btn { flex: 1 1 auto; }
+    }
+
+    @media (max-width: 380px) {
+      .kpi { grid-template-columns: 1fr; }
+      .money-core { font-size: 42px; }
     }
   </style>
 </head>
