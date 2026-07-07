@@ -378,6 +378,14 @@
       color: var(--ink);
       margin-bottom: 4px;
     }
+    .month-card .net {
+      margin-top: 4px;
+      padding-top: 6px;
+      border-top: 1px solid var(--line);
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--ok);
+    }
 
     /* ---------- Table ---------- */
     .table-head {
@@ -748,6 +756,10 @@
   <script>
     const STORAGE_KEY = 'work-money-simulator-v2';
     const VIEW_KEY = 'work-money-simulator-view';
+
+    // 个人自付五险比例（养聰8% + 医疗2% + 失业0.5%）与个税起征点
+    const PERSONAL_SOCIAL_RATE = 10.5;
+    const TAX_THRESHOLD = 5000;
 
     // ----- 云同步（Supabase）-----
     const SUPABASE_URL = 'https://cqgzxphryzknhscvhbyn.supabase.co';
@@ -1453,8 +1465,9 @@
         ? buildMonthCards()
         : buildMonthCards().filter((c) => c.month.startsWith(`${selectedYear}-`));
       const theoryTotal = scopeCards.reduce((sum, m) => sum + m.theoryTotal, 0);
+      const netTotal = scopeCards.reduce((sum, m) => sum + m.netTakeHome, 0);
       const scopeLabel = selectedYear === 'all' ? '全部年份' : `${selectedYear} 年`;
-      $('yearStats').textContent = `${scopeLabel} · 理论总收入 ${formatCurrency(theoryTotal)}`;
+      $('yearStats').textContent = `${scopeLabel} · 理论总收入 ${formatCurrency(theoryTotal)} · 实际到手 ${formatCurrency(netTotal)}`;
     }
 
     function renderHistory() {
@@ -1502,19 +1515,22 @@
           return `<article class="month-card">
             <strong>${item.month}</strong>
             <div>工作日：${item.workdays} 天</div>
-            <div>理论工资：${formatCurrency(item.theorySalary)}</div>
-            <div>公司公积金：${formatCurrency(item.fundComp)}</div>
-            <div>理论总收入：${formatCurrency(item.theoryTotal)}</div>
+            <div>税前工资：${formatCurrency(item.theorySalary)}</div>
+            <div>个人五险：−${formatCurrency(item.personalSocial)}</div>
+            <div>个人公积金：−${formatCurrency(item.personalFund)}</div>
+            <div>个人所得税：−${formatCurrency(item.personalTax)}</div>
+            <div class="net">实际到手：${formatCurrency(item.netTakeHome)}</div>
           </article>`;
         })
         .join('');
 
       if (cards.length > 0) {
         const totalTheory = cards.reduce((sum, m) => sum + m.theoryTotal, 0);
+        const totalNet = cards.reduce((sum, m) => sum + m.netTakeHome, 0);
         const scope = selectedYear === 'all'
           ? `从 ${state.settings.employmentStartDate} 到今天`
           : `${selectedYear} 年`;
-        $('monthSummaryText').textContent = `${scope}：理论总收入（含公积金）${formatCurrency(totalTheory)}。`;
+        $('monthSummaryText').textContent = `${scope}：理论总收入（含公积金）${formatCurrency(totalTheory)}，实际到手（扣五险一金+个税）${formatCurrency(totalNet)}。`;
       } else {
         $('monthSummaryText').textContent = '暂无可统计的月份。';
       }
@@ -1541,15 +1557,50 @@
         const fundComp = theorySalary * (state.settings.housingFundRate / 100);
         const theoryTotal = theorySalary + fundComp;
 
+        // 个人自付：五险一金（个人部分）+ 个人所得税，基于全月工资算税档再按出勤比例折算
+        const fullSalary = state.settings.monthlySalary;
+        const ratio = fullWorkdays === 0 ? 0 : workdays / fullWorkdays;
+        const fullPersonalSocial = fullSalary * (PERSONAL_SOCIAL_RATE / 100);
+        const fullPersonalFund = fullSalary * (state.settings.housingFundRate / 100);
+        const fullTaxable = Math.max(0, fullSalary - fullPersonalSocial - fullPersonalFund - TAX_THRESHOLD);
+        const fullTax = calcMonthlyTax(fullTaxable);
+        const fullNet = fullSalary - fullPersonalSocial - fullPersonalFund - fullTax;
+
+        const personalSocial = fullPersonalSocial * ratio;
+        const personalFund = fullPersonalFund * ratio;
+        const personalTax = fullTax * ratio;
+        const netTakeHome = fullNet * ratio;
+
         const key = `${year}-${String(month + 1).padStart(2, '0')}`;
         const actualEarned = state.history
           .filter((r) => r.date && r.date.startsWith(key))
           .reduce((sum, r) => sum + (r.earned || 0), 0);
 
-        cards.push({ month: key, workdays, theorySalary, fundComp, theoryTotal, actualEarned });
+        cards.push({
+          month: key, workdays, theorySalary, fundComp, theoryTotal, actualEarned,
+          personalSocial, personalFund, personalTax, netTakeHome
+        });
         pointer.setMonth(pointer.getMonth() + 1);
       }
       return cards;
+    }
+
+    // 个人所得税（简化月度税率表，起征点 5000）
+    function calcMonthlyTax(taxable) {
+      if (taxable <= 0) { return 0; }
+      const brackets = [
+        [3000, 0.03, 0],
+        [12000, 0.10, 210],
+        [25000, 0.20, 1410],
+        [35000, 0.25, 2660],
+        [55000, 0.30, 4410],
+        [80000, 0.35, 7160],
+        [Infinity, 0.45, 15160]
+      ];
+      for (const [cap, rate, deduct] of brackets) {
+        if (taxable <= cap) { return taxable * rate - deduct; }
+      }
+      return taxable * 0.45 - 15160;
     }
 
     function calculateCareerTotalIncome() {
