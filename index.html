@@ -1359,15 +1359,13 @@
             <div>理论工资：${formatCurrency(item.theorySalary)}</div>
             <div>公司公积金：${formatCurrency(item.fundComp)}</div>
             <div>理论总收入：${formatCurrency(item.theoryTotal)}</div>
-            <div>历史实收：${formatCurrency(item.actualEarned)}</div>
           </article>`;
         })
         .join('');
 
       if (cards.length > 0) {
         const totalTheory = cards.reduce((sum, m) => sum + m.theoryTotal, 0);
-        const totalActual = cards.reduce((sum, m) => sum + m.actualEarned, 0);
-        $('monthSummaryText').textContent = `从 ${state.settings.employmentStartDate} 到今天：理论总收入（含公积金）${formatCurrency(totalTheory)}，历史实收 ${formatCurrency(totalActual)}。`;
+        $('monthSummaryText').textContent = `从 ${state.settings.employmentStartDate} 到今天：理论总收入（含公积金）${formatCurrency(totalTheory)}。`;
       } else {
         $('monthSummaryText').textContent = '暂无可统计的月份。';
       }
