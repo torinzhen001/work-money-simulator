@@ -823,6 +823,7 @@
     let isPulling = false;
     let isApplyingRemote = false;
     let selectedYear = 'all';
+    let realtimeChannel = null;
 
     const REGION_LIBRARY = {
       beijing: { name: '北京', pension: 16, medical: 10, unemployment: 0.5, injury: 0.2, maternity: 0.8, fundRange: '5%-12%', pPension: 8, pMedical: 2, pUnemployment: 0.5 },
@@ -892,7 +893,11 @@
 
     function persist(options = {}) {
       const { cloud = true, touchUpdatedAt = true } = options;
-      if (!isApplyingRemote && touchUpdatedAt) { state.updatedAt = Date.now(); }
+      // 单调递增：即使本机时钟比其它设备慢，也保证“新的操作”严格大于当前已知状态，
+      // 这样“下班”一定比它要结束的那次“上班”更新，能在所有端胜出。
+      if (!isApplyingRemote && touchUpdatedAt) {
+        state.updatedAt = Math.max(Date.now(), (state.updatedAt || 0) + 1);
+      }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       if (!isApplyingRemote && cloud) { schedulePush(); }
     }
@@ -1270,6 +1275,7 @@
       pullTimer = setInterval(() => {
         if (sb && syncCode && !document.hidden) { pullFromCloud(false); }
       }, 5000);
+      startRealtime();
     }
 
     function stopAutoPull() {
@@ -1277,6 +1283,32 @@
         clearInterval(pullTimer);
         pullTimer = null;
       }
+      stopRealtime();
+    }
+
+    function startRealtime() {
+      stopRealtime();
+      if (!sb || !syncCode) { return; }
+      realtimeChannel = sb
+        .channel(`sync-${syncCode}`)
+        .on('broadcast', { event: 'update' }, ({ payload }) => {
+          if (!payload || (payload.updatedAt || 0) > (state.updatedAt || 0)) {
+            pullFromCloud(false);
+          }
+        })
+        .subscribe();
+    }
+
+    function stopRealtime() {
+      if (realtimeChannel) {
+        sb.removeChannel(realtimeChannel);
+        realtimeChannel = null;
+      }
+    }
+
+    function broadcastUpdate(updatedAt) {
+      if (!realtimeChannel) { return; }
+      realtimeChannel.send({ type: 'broadcast', event: 'update', payload: { updatedAt } });
     }
 
     async function pushToCloud(showToast) {
@@ -1291,8 +1323,16 @@
           session: state.session,
           updatedAt: state.updatedAt || Date.now()
         };
-        const { error } = await sb.rpc('push_data', { p_code: syncCode, p_payload: payload });
+        const { data, error } = await sb.rpc('push_data', { p_code: syncCode, p_payload: payload });
         if (error) { throw error; }
+        // 服务端会拒绝比云端更旧的写入，并把云端当前数据回传。
+        // 如果我们的写入被拒绝（云端更新，例如别的设备刚点了下班），立即采用云端数据。
+        if (data && (data.updatedAt || 0) > (payload.updatedAt || 0)) {
+          applyRemote(data);
+          setSyncMeta('云端已更新，已下载最新', new Date());
+          return;
+        }
+        broadcastUpdate(payload.updatedAt);
         setSyncMeta('已上传', new Date());
         if (showToast) { toast('已上传到云端。'); }
       } catch (err) {
@@ -1324,7 +1364,9 @@
           applyRemote(data);
           setSyncMeta('已下载云端数据', new Date());
           if (force) { toast('已从云端下载最新数据。'); }
-        } else {
+        } else if (localUpdated > remoteUpdated) {
+          // 只有本机确实更新时才上传，避免两端反复把同一份数据推来推去，
+          // 也避免一个还在计时的设备把别处已经“下班”的状态覆盖掉。
           await pushToCloud(false);
           setSyncMeta('本机较新，已上传', new Date());
         }

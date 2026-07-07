@@ -27,17 +27,33 @@ as $$
 $$;
 
 -- 4) 写入函数：按同步码写入或更新
+--    带“防旧写覆盖”保护：只有当传入数据不比云端更旧时才写入，
+--    否则忽略这次写入。无论是否写入，都返回云端当前最新数据，
+--    让还在计时的设备能立刻拿到别处刚点下的“下班”状态。
+drop function if exists public.push_data(text, jsonb);
 create or replace function public.push_data(p_code text, p_payload jsonb)
-returns void
+returns jsonb
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  incoming bigint := coalesce((p_payload->>'updatedAt')::bigint, 0);
+  existing bigint;
 begin
-  insert into public.sync_store (sync_code, payload, updated_at)
-  values (p_code, p_payload, now())
-  on conflict (sync_code)
-  do update set payload = excluded.payload, updated_at = now();
+  select coalesce((payload->>'updatedAt')::bigint, 0)
+    into existing
+    from public.sync_store
+    where sync_code = p_code;
+
+  if existing is null or incoming >= existing then
+    insert into public.sync_store (sync_code, payload, updated_at)
+    values (p_code, p_payload, now())
+    on conflict (sync_code)
+    do update set payload = excluded.payload, updated_at = now();
+  end if;
+
+  return (select payload from public.sync_store where sync_code = p_code);
 end;
 $$;
 
