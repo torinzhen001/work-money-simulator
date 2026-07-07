@@ -1400,20 +1400,14 @@
       $('todayEarned').textContent = formatCurrency(earned);
       $('todayDuration').textContent = formatDuration(session ? session.activeMs : 0);
 
-      // 今日实时时薪：固定日薪 ÷ 实际工作时长（有效时长−摸鱼时长）
-      // 日薪固定，在岗/摸鱼越久时薪越低，越早干完时薪越高
+      // 今日实时时薪：固定日薪 ÷ 在岗时长（摸鱼照样入账，不影响时薪）
       const liveHourlyEl = $('liveHourly');
       if (session && session.activeMs > 0) {
-        const realWorkMs = Math.max(0, session.activeMs - (session.fishMs || 0));
-        if (realWorkMs > 0) {
-          const now = new Date();
-          const workdays = countWorkdays(new Date(now.getFullYear(), now.getMonth(), 1), new Date(now.getFullYear(), now.getMonth() + 1, 0));
-          const dailyWage = workdays > 0 ? state.settings.monthlySalary / workdays : 0;
-          const liveHourly = dailyWage / (realWorkMs / 3600000);
-          liveHourlyEl.textContent = formatCurrency(liveHourly);
-        } else {
-          liveHourlyEl.textContent = '摸鱼拉满 · 时薪↑↑';
-        }
+        const now = new Date();
+        const workdays = countWorkdays(new Date(now.getFullYear(), now.getMonth(), 1), new Date(now.getFullYear(), now.getMonth() + 1, 0));
+        const dailyWage = workdays > 0 ? state.settings.monthlySalary / workdays : 0;
+        const liveHourly = dailyWage / (session.activeMs / 3600000);
+        liveHourlyEl.textContent = formatCurrency(liveHourly);
       } else {
         liveHourlyEl.textContent = formatCurrency(0);
       }
@@ -1500,9 +1494,8 @@
           .slice(0, 300)
           .map((r) => {
             const tagClass = r.source === '实时打卡' ? 'tag tag-live' : 'tag';
-            const realWorkMs = Math.max(0, (r.activeMs || 0) - (r.fishMs || 0));
             const dailyWage = recordDailyWage(r.date);
-            const hourly = realWorkMs > 0 ? dailyWage / (realWorkMs / 3600000) : 0;
+            const hourly = r.activeMs > 0 ? dailyWage / (r.activeMs / 3600000) : 0;
             return `<tr>
               <td>${r.date}</td>
               <td>${formatTime(r.startTs)}</td>
