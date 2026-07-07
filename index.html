@@ -517,6 +517,10 @@
             <div class="kpi-val" id="todayDuration">0h 0m</div>
           </div>
           <div class="kpi-item">
+            <div class="kpi-key">今日实时时薪（摸鱼加成）</div>
+            <div class="kpi-val" id="liveHourly">¥0.00</div>
+          </div>
+          <div class="kpi-item">
             <div class="kpi-key">本月每分钟工资</div>
             <div class="kpi-val" id="minuteRate">¥0.00</div>
           </div>
@@ -1273,6 +1277,19 @@
       $('todayEarned').textContent = formatCurrency(earned);
       $('todayDuration').textContent = formatDuration(session ? session.activeMs : 0);
 
+      // 今日实时时薪：入账 ÷ 实际工作时长（有效时长−摸鱼时长），摸鱼越多时薪越高
+      const liveHourlyEl = $('liveHourly');
+      if (session && session.activeMs > 0) {
+        const realWorkMs = Math.max(0, session.activeMs - (session.fishMs || 0));
+        if (realWorkMs > 0) {
+          const liveHourly = earned / (realWorkMs / 3600000);
+          liveHourlyEl.textContent = formatCurrency(liveHourly);
+        } else {
+          liveHourlyEl.textContent = '摸鱼拉满 · 时薪↑↑';
+        }
+      } else {
+        liveHourlyEl.textContent = formatCurrency(0);
+      }
       if (!session) {
         stateEl.className = 'pill state-idle';
         stateEl.textContent = '未上班';
