@@ -587,6 +587,35 @@
       </div>
 
       <div class="card">
+        <h2>云同步（多设备）</h2>
+        <p class="sub">用同一个同步码，在其它电脑、手机或微信里打开同一份数据。</p>
+        <div style="display:flex; gap:28px; flex-wrap:wrap; margin-bottom:16px;">
+          <div>
+            <div class="meta">当前状态</div>
+            <div id="syncStatus" style="font-weight:600;">未开启云同步</div>
+          </div>
+          <div>
+            <div class="meta">你的同步码</div>
+            <div id="syncCodeDisplay" style="font-family:ui-monospace,Menlo,Consolas,monospace; font-size:18px; font-weight:700; letter-spacing:1px;">未开启</div>
+          </div>
+        </div>
+        <div class="form-actions sync-off">
+          <button class="btn btn-accent" id="enableSyncBtn" type="button">生成同步码并开启</button>
+        </div>
+        <div class="form-actions sync-off">
+          <input id="syncCodeInput" type="text" placeholder="已有同步码？粘贴到这里" style="flex:1; min-width:200px;" />
+          <button class="btn" id="connectSyncBtn" type="button">连接并下载</button>
+        </div>
+        <div class="form-actions sync-on" style="display:none;">
+          <button class="btn" id="copySyncBtn" type="button">复制同步码</button>
+          <button class="btn" id="pushNowBtn" type="button">立即上传</button>
+          <button class="btn" id="pullNowBtn" type="button">立即下载</button>
+          <button class="btn btn-danger btn-sm" id="disableSyncBtn" type="button">停止同步</button>
+        </div>
+        <div class="meta" id="syncMeta" style="margin-top:10px;">—</div>
+      </div>
+
+      <div class="card">
         <div class="table-head">
           <h2>历史上班记录</h2>
           <span class="meta" id="historyStats">0 条记录</span>
@@ -629,9 +658,19 @@
     </div>
   </dialog>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     const STORAGE_KEY = 'work-money-simulator-v2';
     const VIEW_KEY = 'work-money-simulator-view';
+
+    // ----- 云同步（Supabase）-----
+    const SUPABASE_URL = 'https://cqgzxphryzknhscvhbyn.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_6_zB3h5DaOoJr8k9fZ6XzQ_QK1Tqi_b';
+    const SYNC_CODE_KEY = 'work-money-simulator-sync-code';
+    let sb = null;
+    let syncCode = null;
+    let pushTimer = null;
+    let isApplyingRemote = false;
 
     const REGION_LIBRARY = {
       beijing: { name: '北京', pension: 16, medical: 10, unemployment: 0.5, injury: 0.2, maternity: 0.8, fundRange: '5%-12%' },
@@ -661,7 +700,8 @@
     const state = {
       settings: { ...defaultSettings },
       history: [],
-      session: null
+      session: null,
+      updatedAt: 0
     };
 
     const $ = (id) => document.getElementById(id);
@@ -676,6 +716,7 @@
       restoreView();
       renderAll();
       preloadHolidayYears();
+      initSync();
       setInterval(tickClock, 1000);
       setInterval(tickSession, 1000);
     }
@@ -688,13 +729,16 @@
         if (saved.settings) { state.settings = { ...defaultSettings, ...saved.settings }; }
         if (Array.isArray(saved.history)) { state.history = saved.history; }
         if (saved.session) { state.session = saved.session; }
+        if (saved.updatedAt) { state.updatedAt = saved.updatedAt; }
       } catch (err) {
         console.error('读取本地数据失败', err);
       }
     }
 
     function persist() {
+      if (!isApplyingRemote) { state.updatedAt = Date.now(); }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      if (!isApplyingRemote) { schedulePush(); }
     }
 
     function initRegionSelect() {
@@ -729,6 +773,13 @@
         const target = e.target.closest('[data-del]');
         if (target) { deleteHistory(target.dataset.del); }
       });
+      // Cloud sync
+      $('enableSyncBtn').addEventListener('click', enableSync);
+      $('connectSyncBtn').addEventListener('click', connectSync);
+      $('copySyncBtn').addEventListener('click', copySyncCode);
+      $('pushNowBtn').addEventListener('click', () => pushToCloud(true));
+      $('pullNowBtn').addEventListener('click', () => pullFromCloud(true));
+      $('disableSyncBtn').addEventListener('click', disableSync);
       $('closeDialogBtn').addEventListener('click', () => $('checkoutDialog').close());
     }
 
@@ -963,6 +1014,178 @@
       renderAll();
       preloadHolidayYears();
       toast('全部数据已清空，回到初始状态。');
+    }
+
+    // ================= 云同步 =================
+    function initSync() {
+      try {
+        if (window.supabase && SUPABASE_URL && SUPABASE_KEY) {
+          sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        }
+      } catch (err) {
+        console.error('云同步初始化失败', err);
+      }
+      try { syncCode = localStorage.getItem(SYNC_CODE_KEY) || null; } catch (err) { /* ignore */ }
+      renderSyncStatus();
+      if (sb && syncCode) {
+        pullFromCloud(false);
+        setInterval(() => { if (sb && syncCode && !document.hidden) { pullFromCloud(false); } }, 30000);
+      }
+    }
+
+    function generateSyncCode() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      const arr = new Uint32Array(16);
+      (window.crypto || crypto).getRandomValues(arr);
+      let out = '';
+      for (let i = 0; i < 16; i += 1) {
+        out += chars[arr[i] % chars.length];
+        if (i % 4 === 3 && i < 15) { out += '-'; }
+      }
+      return out;
+    }
+
+    function enableSync() {
+      if (!sb) { toast('云同步未就绪，请检查网络后刷新。'); return; }
+      if (syncCode) { toast('云同步已经开启了。'); return; }
+      syncCode = generateSyncCode();
+      try { localStorage.setItem(SYNC_CODE_KEY, syncCode); } catch (err) { /* ignore */ }
+      renderSyncStatus();
+      pushToCloud(true);
+      toast('已生成同步码并开启云同步。');
+    }
+
+    function connectSync() {
+      if (!sb) { toast('云同步未就绪，请检查网络后刷新。'); return; }
+      const input = $('syncCodeInput').value.trim();
+      if (!input) { toast('请先输入同步码。'); return; }
+      syncCode = input;
+      try { localStorage.setItem(SYNC_CODE_KEY, syncCode); } catch (err) { /* ignore */ }
+      renderSyncStatus();
+      pullFromCloud(true);
+    }
+
+    function disableSync() {
+      if (!confirm('确定停止云同步吗？本机数据会保留，但不再与云端同步。')) { return; }
+      syncCode = null;
+      try { localStorage.removeItem(SYNC_CODE_KEY); } catch (err) { /* ignore */ }
+      renderSyncStatus();
+      toast('已停止云同步。');
+    }
+
+    function copySyncCode() {
+      if (!syncCode) { return; }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(syncCode).then(
+          () => toast('同步码已复制。'),
+          () => toast('复制失败，请手动选择复制。')
+        );
+      } else {
+        toast('当前环境不支持自动复制，请手动选择复制。');
+      }
+    }
+
+    function schedulePush() {
+      if (!sb || !syncCode) { return; }
+      clearTimeout(pushTimer);
+      pushTimer = setTimeout(() => pushToCloud(false), 1500);
+    }
+
+    async function pushToCloud(showToast) {
+      if (!sb || !syncCode) {
+        if (showToast) { toast('还没有开启云同步。'); }
+        return;
+      }
+      try {
+        const payload = {
+          settings: state.settings,
+          history: state.history,
+          session: state.session,
+          updatedAt: state.updatedAt || Date.now()
+        };
+        const { error } = await sb.rpc('push_data', { p_code: syncCode, p_payload: payload });
+        if (error) { throw error; }
+        setSyncMeta('已上传', new Date());
+        if (showToast) { toast('已上传到云端。'); }
+      } catch (err) {
+        console.error('上传失败', err);
+        setSyncMeta('上传失败：' + (err.message || err), null);
+        if (showToast) { toast('上传失败，请稍后再试。'); }
+      }
+    }
+
+    async function pullFromCloud(force) {
+      if (!sb || !syncCode) {
+        if (force) { toast('还没有开启云同步。'); }
+        return;
+      }
+      try {
+        const { data, error } = await sb.rpc('pull_data', { p_code: syncCode });
+        if (error) { throw error; }
+        if (!data) {
+          setSyncMeta('云端暂无数据，已上传本机', new Date());
+          await pushToCloud(false);
+          if (force) { toast('云端还没有数据，已把本机数据上传。'); }
+          return;
+        }
+        const remoteUpdated = data.updatedAt || 0;
+        const localUpdated = state.updatedAt || 0;
+        if (force || remoteUpdated >= localUpdated) {
+          applyRemote(data);
+          setSyncMeta('已下载云端数据', new Date());
+          if (force) { toast('已从云端下载最新数据。'); }
+        } else {
+          await pushToCloud(false);
+          setSyncMeta('本机较新，已上传', new Date());
+        }
+      } catch (err) {
+        console.error('下载失败', err);
+        setSyncMeta('同步失败：' + (err.message || err), null);
+        if (force) { toast('下载失败，请检查同步码或网络。'); }
+      }
+    }
+
+    function applyRemote(data) {
+      isApplyingRemote = true;
+      try {
+        if (data.settings) { state.settings = { ...defaultSettings, ...data.settings }; }
+        state.history = Array.isArray(data.history) ? data.history : [];
+        state.session = data.session || null;
+        state.updatedAt = data.updatedAt || Date.now();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        bindInputs();
+        renderAll();
+      } finally {
+        isApplyingRemote = false;
+      }
+    }
+
+    function renderSyncStatus() {
+      const codeEl = $('syncCodeDisplay');
+      const statusEl = $('syncStatus');
+      const onEls = document.querySelectorAll('.sync-on');
+      const offEls = document.querySelectorAll('.sync-off');
+      if (syncCode) {
+        codeEl.textContent = syncCode;
+        statusEl.textContent = sb ? '云同步已开启' : '云同步未就绪（检查网络）';
+        onEls.forEach((el) => { el.style.display = ''; });
+        offEls.forEach((el) => { el.style.display = 'none'; });
+      } else {
+        codeEl.textContent = '未开启';
+        statusEl.textContent = sb ? '未开启云同步' : '云同步未就绪（检查网络）';
+        onEls.forEach((el) => { el.style.display = 'none'; });
+        offEls.forEach((el) => { el.style.display = ''; });
+      }
+    }
+
+    function setSyncMeta(text, when) {
+      const el = $('syncMeta');
+      if (!el) { return; }
+      if (when) {
+        el.textContent = `${text} · ${when.toLocaleTimeString('zh-CN', { hour12: false })}`;
+      } else {
+        el.textContent = text;
+      }
     }
 
     function tickClock() {
