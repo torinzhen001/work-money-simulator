@@ -386,6 +386,22 @@
       font-weight: 700;
       color: var(--ok);
     }
+    .month-card .fund { color: var(--accent); font-weight: 600; }
+
+    .baseline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 18px;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .baseline b { color: var(--ink); font-weight: 700; }
 
     /* ---------- Table ---------- */
     .table-head {
@@ -703,10 +719,15 @@
       </div>
 
       <div class="card">
-        <h2>政策与月收入概览</h2>
+        <h2>月收入概览</h2>
         <p class="sub" id="monthSummaryText">--</p>
-        <div class="policy" id="policyGrid"></div>
+        <div class="baseline" id="monthBaseline"></div>
         <div class="month-cards" id="monthCards"></div>
+      </div>
+
+      <div class="card">
+        <h2>地区五险一金政策</h2>
+        <div class="policy" id="policyGrid"></div>
       </div>
 
       <div class="card">
@@ -1476,10 +1497,10 @@
       const scopeCards = selectedYear === 'all'
         ? buildMonthCards()
         : buildMonthCards().filter((c) => c.month.startsWith(`${selectedYear}-`));
-      const theoryTotal = scopeCards.reduce((sum, m) => sum + m.theoryTotal, 0);
       const netTotal = scopeCards.reduce((sum, m) => sum + m.netTakeHome, 0);
+      const fundTotal = scopeCards.reduce((sum, m) => sum + m.fundIncome, 0);
       const scopeLabel = selectedYear === 'all' ? '全部年份' : `${selectedYear} 年`;
-      $('yearStats').textContent = `${scopeLabel} · 理论总收入 ${formatCurrency(theoryTotal)} · 实际到手 ${formatCurrency(netTotal)}`;
+      $('yearStats').textContent = `${scopeLabel} · 实际到手 ${formatCurrency(netTotal)} · 公积金到账 ${formatCurrency(fundTotal)}`;
     }
 
     function renderHistory() {
@@ -1522,6 +1543,21 @@
       const cards = selectedYear === 'all'
         ? allCards
         : allCards.filter((c) => c.month.startsWith(`${selectedYear}-`));
+
+      // 满勤基准（每月固定项，抽出来只显示一次）
+      const region = REGION_LIBRARY[state.settings.region] || REGION_LIBRARY.beijing;
+      const personalSocialRate = (region.pPension || 0) + (region.pMedical || 0) + (region.pUnemployment || 0);
+      const fundRate = state.settings.housingFundRate;
+      const baseSalary = state.settings.monthlySalary;
+      const baseSocial = baseSalary * (personalSocialRate / 100);
+      const baseFundSelf = baseSalary * (fundRate / 100);
+      const baseFundIncome = baseFundSelf * 2;
+      $('monthBaseline').innerHTML = `
+        <span>满勤税前 <b>${formatCurrency(baseSalary)}</b></span>
+        <span>个人五险 <b>−${formatCurrency(baseSocial)}</b></span>
+        <span>个人公积金 <b>−${formatCurrency(baseFundSelf)}</b></span>
+        <span>公积金到账 <b>+${formatCurrency(baseFundIncome)}</b>（个人+公司）</span>`;
+
       $('monthCards').innerHTML = cards
         .slice(-18)
         .reverse()
@@ -1529,22 +1565,20 @@
           return `<article class="month-card">
             <strong>${item.month}</strong>
             <div>工作日：${item.workdays} 天</div>
-            <div>税前工资：${formatCurrency(item.theorySalary)}</div>
-            <div>个人五险：−${formatCurrency(item.personalSocial)}</div>
-            <div>个人公积金：−${formatCurrency(item.personalFund)}</div>
             <div>个人所得税：−${formatCurrency(item.personalTax)}</div>
+            <div class="fund">公积金到账：+${formatCurrency(item.fundIncome)}</div>
             <div class="net">实际到手：${formatCurrency(item.netTakeHome)}</div>
           </article>`;
         })
         .join('');
 
       if (cards.length > 0) {
-        const totalTheory = cards.reduce((sum, m) => sum + m.theoryTotal, 0);
         const totalNet = cards.reduce((sum, m) => sum + m.netTakeHome, 0);
+        const totalFund = cards.reduce((sum, m) => sum + m.fundIncome, 0);
         const scope = selectedYear === 'all'
           ? `从 ${state.settings.employmentStartDate} 到今天`
           : `${selectedYear} 年`;
-        $('monthSummaryText').textContent = `${scope}：理论总收入（含公积金）${formatCurrency(totalTheory)}，实际到手（扣五险一金+个税）${formatCurrency(totalNet)}。`;
+        $('monthSummaryText').textContent = `${scope}：实际到手（扣五险一金+个税）${formatCurrency(totalNet)}，公积金账户累计到账 ${formatCurrency(totalFund)}。`;
       } else {
         $('monthSummaryText').textContent = '暂无可统计的月份。';
       }
@@ -1594,6 +1628,8 @@
         cumTaxPaid += personalTax;
 
         const netTakeHome = gross - personalSocial - personalFund - personalTax;
+        // 公积金到账 = 个人划扣 + 公司同比例补贴（都进你的公积金账户）
+        const fundIncome = personalFund + fundComp;
 
         const key = `${year}-${String(month + 1).padStart(2, '0')}`;
         const actualEarned = state.history
@@ -1602,7 +1638,7 @@
 
         cards.push({
           month: key, workdays, theorySalary, fundComp, theoryTotal, actualEarned,
-          personalSocial, personalFund, personalTax, netTakeHome
+          personalSocial, personalFund, personalTax, netTakeHome, fundIncome
         });
         pointer.setMonth(pointer.getMonth() + 1);
       }
