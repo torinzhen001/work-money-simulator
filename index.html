@@ -388,11 +388,29 @@
     }
     .month-card .fund { color: var(--accent); font-weight: 600; }
 
-    .baseline {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px 18px;
-      padding: 14px 16px;
+    .highlight {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .highlight-item {
+      border-radius: var(--radius-sm);
+      padding: 18px 20px;
+      color: #fff;
+    }
+    .highlight-item.net { background: linear-gradient(150deg, #1f9d63, #17784b); }
+    .highlight-item.fund { background: linear-gradient(150deg, #0071e3, #0056b3); }
+    .highlight-key { font-size: 13px; opacity: 0.85; }
+    .highlight-val {
+      margin-top: 6px;
+      font-size: clamp(24px, 5vw, 34px);
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      font-variant-numeric: tabular-nums;
+    }
+    .deduct-note {
+      padding: 12px 16px;
       margin-bottom: 16px;
       background: var(--surface-2);
       border: 1px solid var(--line);
@@ -401,7 +419,7 @@
       color: var(--muted);
       font-variant-numeric: tabular-nums;
     }
-    .baseline b { color: var(--ink); font-weight: 700; }
+    .deduct-note b { color: var(--ink); font-weight: 700; }
 
     /* ---------- Table ---------- */
     .table-head {
@@ -559,6 +577,7 @@
       input, select { font-size: 16px; }
       .form-actions { gap: 10px; }
       .form-actions .btn { flex: 1 1 auto; }
+      .highlight { grid-template-columns: 1fr; }
     }
 
     @media (max-width: 380px) {
@@ -720,8 +739,9 @@
 
       <div class="card">
         <h2>月收入概览</h2>
-        <p class="sub" id="monthSummaryText">--</p>
-        <div class="baseline" id="monthBaseline"></div>
+        <p class="sub">这里只看进你口袋的钱：到手工资 + 公积金账户到账。</p>
+        <div class="highlight" id="incomeHighlight"></div>
+        <div class="deduct-note" id="deductNote"></div>
         <div class="month-cards" id="monthCards"></div>
       </div>
 
@@ -1544,19 +1564,29 @@
         ? allCards
         : allCards.filter((c) => c.month.startsWith(`${selectedYear}-`));
 
-      // 满勤基准（每月固定项，抽出来只显示一次）
+      // 每月固定扣除（集中放一处）
       const region = REGION_LIBRARY[state.settings.region] || REGION_LIBRARY.beijing;
       const personalSocialRate = (region.pPension || 0) + (region.pMedical || 0) + (region.pUnemployment || 0);
       const fundRate = state.settings.housingFundRate;
       const baseSalary = state.settings.monthlySalary;
       const baseSocial = baseSalary * (personalSocialRate / 100);
       const baseFundSelf = baseSalary * (fundRate / 100);
-      const baseFundIncome = baseFundSelf * 2;
-      $('monthBaseline').innerHTML = `
-        <span>满勤税前 <b>${formatCurrency(baseSalary)}</b></span>
-        <span>个人五险 <b>−${formatCurrency(baseSocial)}</b></span>
-        <span>个人公积金 <b>−${formatCurrency(baseFundSelf)}</b></span>
-        <span>公积金到账 <b>+${formatCurrency(baseFundIncome)}</b>（个人+公司）</span>`;
+
+      // 收入合计（大数字直观显示）
+      const totalNet = cards.reduce((sum, m) => sum + m.netTakeHome, 0);
+      const totalFund = cards.reduce((sum, m) => sum + m.fundIncome, 0);
+      const scope = selectedYear === 'all' ? '累计' : `${selectedYear} 年`;
+      $('incomeHighlight').innerHTML = `
+        <div class="highlight-item net">
+          <div class="highlight-key">${scope}到手工资</div>
+          <div class="highlight-val">${formatCurrency(totalNet)}</div>
+        </div>
+        <div class="highlight-item fund">
+          <div class="highlight-key">${scope}公积金账户存款</div>
+          <div class="highlight-val">${formatCurrency(totalFund)}</div>
+        </div>`;
+
+      $('deductNote').innerHTML = `每月固定扣除（满勤）：个人五险 <b>−${formatCurrency(baseSocial)}</b> ＋ 个人公积金 <b>−${formatCurrency(baseFundSelf)}</b>（公积金另有公司同比例补贴一并进账）`;
 
       $('monthCards').innerHTML = cards
         .slice(-18)
@@ -1565,23 +1595,11 @@
           return `<article class="month-card">
             <strong>${item.month}</strong>
             <div>工作日：${item.workdays} 天</div>
-            <div>个人所得税：−${formatCurrency(item.personalTax)}</div>
+            <div class="net">到手工资：${formatCurrency(item.netTakeHome)}</div>
             <div class="fund">公积金到账：+${formatCurrency(item.fundIncome)}</div>
-            <div class="net">实际到手：${formatCurrency(item.netTakeHome)}</div>
           </article>`;
         })
         .join('');
-
-      if (cards.length > 0) {
-        const totalNet = cards.reduce((sum, m) => sum + m.netTakeHome, 0);
-        const totalFund = cards.reduce((sum, m) => sum + m.fundIncome, 0);
-        const scope = selectedYear === 'all'
-          ? `从 ${state.settings.employmentStartDate} 到今天`
-          : `${selectedYear} 年`;
-        $('monthSummaryText').textContent = `${scope}：实际到手（扣五险一金+个税）${formatCurrency(totalNet)}，公积金账户累计到账 ${formatCurrency(totalFund)}。`;
-      } else {
-        $('monthSummaryText').textContent = '暂无可统计的月份。';
-      }
     }
 
     function buildMonthCards() {
