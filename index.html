@@ -819,6 +819,8 @@
     let sb = null;
     let syncCode = null;
     let pushTimer = null;
+    let pullTimer = null;
+    let isPulling = false;
     let isApplyingRemote = false;
     let selectedYear = 'all';
 
@@ -867,6 +869,9 @@
       renderAll();
       preloadHolidayYears();
       initSync();
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && sb && syncCode) { pullFromCloud(false); }
+      });
       setInterval(tickClock, 1000);
       setInterval(tickSession, 1000);
     }
@@ -885,10 +890,11 @@
       }
     }
 
-    function persist() {
-      if (!isApplyingRemote) { state.updatedAt = Date.now(); }
+    function persist(options = {}) {
+      const { cloud = true, touchUpdatedAt = true } = options;
+      if (!isApplyingRemote && touchUpdatedAt) { state.updatedAt = Date.now(); }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      if (!isApplyingRemote) { schedulePush(); }
+      if (!isApplyingRemote && cloud) { schedulePush(); }
     }
 
     function initRegionSelect() {
@@ -1097,6 +1103,7 @@
 
       state.session = null;
       persist();
+      pushToCloud(false);
       renderAll();
       showCheckoutDialog(session.earned, finalActiveMs, hourly);
       toast('今天辛苦啦，已下班。');
@@ -1192,7 +1199,7 @@
       renderSyncStatus();
       if (sb && syncCode) {
         pullFromCloud(false);
-        setInterval(() => { if (sb && syncCode && !document.hidden) { pullFromCloud(false); } }, 30000);
+        startAutoPull();
       }
     }
 
@@ -1215,6 +1222,7 @@
       try { localStorage.setItem(SYNC_CODE_KEY, syncCode); } catch (err) { /* ignore */ }
       renderSyncStatus();
       pushToCloud(true);
+      startAutoPull();
       toast('已生成同步码并开启云同步。');
     }
 
@@ -1226,12 +1234,14 @@
       try { localStorage.setItem(SYNC_CODE_KEY, syncCode); } catch (err) { /* ignore */ }
       renderSyncStatus();
       pullFromCloud(true);
+      startAutoPull();
     }
 
     function disableSync() {
       if (!confirm('确定停止云同步吗？本机数据会保留，但不再与云端同步。')) { return; }
       syncCode = null;
       try { localStorage.removeItem(SYNC_CODE_KEY); } catch (err) { /* ignore */ }
+      stopAutoPull();
       renderSyncStatus();
       toast('已停止云同步。');
     }
@@ -1252,6 +1262,21 @@
       if (!sb || !syncCode) { return; }
       clearTimeout(pushTimer);
       pushTimer = setTimeout(() => pushToCloud(false), 1500);
+    }
+
+    function startAutoPull() {
+      stopAutoPull();
+      if (!sb || !syncCode) { return; }
+      pullTimer = setInterval(() => {
+        if (sb && syncCode && !document.hidden) { pullFromCloud(false); }
+      }, 5000);
+    }
+
+    function stopAutoPull() {
+      if (pullTimer) {
+        clearInterval(pullTimer);
+        pullTimer = null;
+      }
     }
 
     async function pushToCloud(showToast) {
@@ -1282,6 +1307,8 @@
         if (force) { toast('还没有开启云同步。'); }
         return;
       }
+      if (isPulling) { return; }
+      isPulling = true;
       try {
         const { data, error } = await sb.rpc('pull_data', { p_code: syncCode });
         if (error) { throw error; }
@@ -1293,7 +1320,7 @@
         }
         const remoteUpdated = data.updatedAt || 0;
         const localUpdated = state.updatedAt || 0;
-        if (force || remoteUpdated >= localUpdated) {
+        if (force || remoteUpdated > localUpdated) {
           applyRemote(data);
           setSyncMeta('已下载云端数据', new Date());
           if (force) { toast('已从云端下载最新数据。'); }
@@ -1305,6 +1332,8 @@
         console.error('下载失败', err);
         setSyncMeta('同步失败：' + (err.message || err), null);
         if (force) { toast('下载失败，请检查同步码或网络。'); }
+      } finally {
+        isPulling = false;
       }
     }
 
@@ -1382,7 +1411,7 @@
         session.pauseMs += delta;
       }
 
-      persist();
+      persist({ cloud: false, touchUpdatedAt: false });
       renderRuntime();
     }
 
