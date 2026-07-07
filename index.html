@@ -1,0 +1,1307 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>上班收钱模拟器</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+
+    :root {
+      --bg: #f5f5f7;
+      --surface: #ffffff;
+      --surface-2: #fbfbfd;
+      --ink: #1d1d1f;
+      --muted: #6e6e73;
+      --line: rgba(0, 0, 0, 0.09);
+      --line-strong: rgba(0, 0, 0, 0.14);
+      --accent: #0071e3;
+      --accent-press: #0064c8;
+      --danger: #d70015;
+      --ok: #1f9d63;
+      --warn: #b25e00;
+      --radius: 16px;
+      --radius-sm: 10px;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 8px 24px rgba(0, 0, 0, 0.06);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100%;
+      color: var(--ink);
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display',
+        'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.5;
+    }
+
+    button, input, select { font-family: inherit; }
+
+    /* ---------- Nav ---------- */
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(251, 251, 253, 0.86);
+      backdrop-filter: saturate(180%) blur(18px);
+      border-bottom: 1px solid var(--line);
+    }
+    .nav-inner {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .brand {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+    }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      background: rgba(0, 0, 0, 0.05);
+      padding: 4px;
+      border-radius: 999px;
+    }
+    .tab {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 600;
+      padding: 8px 16px;
+      min-height: 36px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: color 0.15s, background 0.15s;
+    }
+    .tab[aria-selected="true"] {
+      background: var(--surface);
+      color: var(--ink);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    }
+    .clock {
+      margin-left: auto;
+      font-variant-numeric: tabular-nums;
+      font-size: 13px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    /* ---------- Layout ---------- */
+    .wrap {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 28px 20px 64px;
+    }
+    .view { display: none; }
+    .view.active { display: block; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow);
+    }
+    .card h2 {
+      margin: 0 0 4px;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .card .sub {
+      margin: 0 0 20px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .card h3 {
+      margin: 0 0 14px;
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    /* ---------- Console ---------- */
+    .console-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+    .console-head h2 { margin: 0; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+    }
+    .pill::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .state-idle { color: var(--muted); background: rgba(0, 0, 0, 0.05); }
+    .state-working { color: var(--ok); background: rgba(31, 157, 99, 0.12); }
+    .state-paused { color: var(--warn); background: rgba(178, 94, 0, 0.12); }
+    .state-fishing { color: var(--accent); background: rgba(0, 113, 227, 0.12); }
+
+    .stage {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius);
+      background: linear-gradient(160deg, #26262b, #17171a);
+      color: #fff;
+      padding: 44px 24px;
+      text-align: center;
+      margin-bottom: 22px;
+    }
+    .money-core {
+      font-size: clamp(40px, 9vw, 72px);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.05;
+    }
+    .money-label {
+      margin-top: 8px;
+      font-size: 14px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+    .coin {
+      position: absolute;
+      top: -20px;
+      font-size: 16px;
+      font-weight: 700;
+      color: #ffd66b;
+      pointer-events: none;
+      animation: fall 1.3s ease-in forwards;
+    }
+    @keyframes fall {
+      0% { transform: translateY(0) rotate(0); opacity: 0; }
+      15% { opacity: 1; }
+      100% { transform: translateY(200px) rotate(220deg); opacity: 0; }
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .controls .btn-primary { grid-column: 1 / -1; }
+
+    /* ---------- Buttons ---------- */
+    .btn {
+      appearance: none;
+      border: 1px solid var(--line-strong);
+      background: var(--surface);
+      color: var(--ink);
+      font-size: 15px;
+      font-weight: 600;
+      padding: 12px 20px;
+      min-height: 48px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, transform 0.05s, opacity 0.15s;
+    }
+    .btn:hover { background: var(--surface-2); }
+    .btn:active { transform: scale(0.985); }
+    .btn:focus-visible { outline: 3px solid rgba(0, 113, 227, 0.4); outline-offset: 2px; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-primary {
+      background: var(--ink);
+      border-color: var(--ink);
+      color: #fff;
+      min-height: 54px;
+      font-size: 16px;
+    }
+    .btn-primary:hover { background: #000; }
+    .btn-primary.is-off {
+      background: var(--danger);
+      border-color: var(--danger);
+    }
+    .btn-primary.is-off:hover { background: #b8000f; }
+
+    .btn-accent {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .btn-accent:hover { background: var(--accent-press); }
+
+    .btn-danger {
+      color: var(--danger);
+      border-color: rgba(215, 0, 21, 0.3);
+      background: var(--surface);
+    }
+    .btn-danger:hover { background: rgba(215, 0, 21, 0.06); }
+
+    .btn-sm {
+      min-height: 34px;
+      padding: 6px 12px;
+      font-size: 13px;
+      border-radius: 8px;
+    }
+
+    /* ---------- KPI ---------- */
+    .kpi {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+    }
+    .kpi-item {
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+    }
+    .kpi-key { font-size: 12px; color: var(--muted); }
+    .kpi-val {
+      margin-top: 4px;
+      font-size: 20px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      overflow-wrap: anywhere;
+    }
+
+    /* ---------- Forms ---------- */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+    }
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    input, select {
+      width: 100%;
+      padding: 11px 12px;
+      min-height: 44px;
+      font-size: 15px;
+      font-weight: 400;
+      color: var(--ink);
+      background: var(--surface);
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-sm);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.18);
+    }
+    .form-actions {
+      margin-top: 18px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .meta { font-size: 12px; color: var(--muted); }
+
+    /* ---------- Policy / months ---------- */
+    .policy {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .policy-item {
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      font-size: 15px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .policy-item strong {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    .month-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .month-card {
+      background: var(--surface-2);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      font-size: 13px;
+      color: var(--muted);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .month-card strong {
+      font-size: 15px;
+      color: var(--ink);
+      margin-bottom: 4px;
+    }
+
+    /* ---------- Table ---------- */
+    .table-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      min-width: 720px;
+    }
+    thead th {
+      text-align: left;
+      font-weight: 600;
+      color: var(--muted);
+      padding: 10px 12px;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    tbody td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    tbody tr:last-child td { border-bottom: 0; }
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.05);
+      color: var(--muted);
+    }
+    .tag-live { background: rgba(31, 157, 99, 0.12); color: var(--ok); }
+
+    .danger-zone {
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    /* ---------- Toast ---------- */
+    .toast-wrap {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      z-index: 200;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-width: min(320px, calc(100vw - 40px));
+      pointer-events: none;
+    }
+    .toast {
+      background: rgba(29, 29, 31, 0.94);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 10px 14px;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      animation: toastIn 0.2s ease;
+    }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ---------- Dialog ---------- */
+    dialog {
+      border: 0;
+      border-radius: var(--radius);
+      padding: 0;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+      max-width: 360px;
+    }
+    dialog::backdrop { background: rgba(0, 0, 0, 0.35); backdrop-filter: blur(2px); }
+    .modal { padding: 28px 24px; text-align: center; }
+    .modal h3 { margin: 0 0 12px; font-size: 18px; }
+    .modal p { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
+
+    @media (max-width: 560px) {
+      .wrap { padding: 20px 14px 48px; }
+      .card { padding: 18px; }
+      .controls { grid-template-columns: 1fr; }
+      .clock { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-inner">
+      <div class="brand">上班收钱模拟器</div>
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" aria-selected="true" data-view="console" type="button">主控台</button>
+        <button class="tab" role="tab" aria-selected="false" data-view="settings" type="button">设置与记录</button>
+      </div>
+      <div class="clock" id="clockNow">--</div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- ============ 主控台 ============ -->
+    <section class="view active" id="view-console">
+      <div class="card">
+        <div class="console-head">
+          <h2>今日上班</h2>
+          <span class="pill state-idle" id="sessionState">未上班</span>
+        </div>
+
+        <div class="stage" id="stage">
+          <div class="money-core" id="moneyCore">¥0.00</div>
+          <div class="money-label" id="moneyLabel">等待上班指令</div>
+        </div>
+
+        <div class="controls">
+          <button class="btn btn-primary btn-accent" id="primaryBtn" type="button">开始上班</button>
+          <button class="btn" id="pauseBtn" type="button" disabled>暂停</button>
+          <button class="btn" id="fishBtn" type="button" disabled>摸鱼开始</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="kpi">
+          <div class="kpi-item">
+            <div class="kpi-key">今日累计入账</div>
+            <div class="kpi-val" id="todayEarned">¥0.00</div>
+          </div>
+          <div class="kpi-item">
+            <div class="kpi-key">有效时长</div>
+            <div class="kpi-val" id="todayDuration">0h 0m</div>
+          </div>
+          <div class="kpi-item">
+            <div class="kpi-key">本月每分钟工资</div>
+            <div class="kpi-val" id="minuteRate">¥0.00</div>
+          </div>
+          <div class="kpi-item">
+            <div class="kpi-key">理论累计收入（含公积金）</div>
+            <div class="kpi-val" id="careerTotal">¥0.00</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 设置与记录 ============ -->
+    <section class="view" id="view-settings">
+      <div class="card">
+        <h2>个人设置</h2>
+        <p class="sub">修改后请点击保存，收入按分钟实时计算。</p>
+        <div class="grid">
+          <label>月薪（税前）
+            <input id="monthlySalary" type="number" min="1" step="100" />
+          </label>
+          <label>每天上班时长（小时）
+            <input id="dailyHours" type="number" min="1" max="16" step="0.5" />
+          </label>
+          <label>开始上班日期
+            <input id="employmentStartDate" type="date" />
+          </label>
+          <label>地区政策
+            <select id="region"></select>
+          </label>
+          <label>公司帮交公积金比例（%）
+            <input id="housingFundRate" type="number" min="0" max="24" step="0.5" />
+          </label>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-accent" id="saveSettingsBtn" type="button">保存设置</button>
+          <button class="btn" id="pullPolicyBtn" type="button">拉取地区政策</button>
+          <span class="meta" id="policyMeta">政策更新时间：--</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>补录历史上班</h2>
+        <p class="sub">忘记打卡？在这里手动补上一条记录。</p>
+        <div class="grid">
+          <label>日期
+            <input id="manualDate" type="date" />
+          </label>
+          <label>上班时间
+            <input id="manualStart" type="time" value="09:00" />
+          </label>
+          <label>下班时间
+            <input id="manualEnd" type="time" value="18:00" />
+          </label>
+          <label>暂停分钟数
+            <input id="manualBreak" type="number" min="0" value="60" />
+          </label>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-accent" id="manualAddBtn" type="button">写入历史记录</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>政策与月收入概览</h2>
+        <p class="sub" id="monthSummaryText">--</p>
+        <div class="policy" id="policyGrid"></div>
+        <div class="month-cards" id="monthCards"></div>
+      </div>
+
+      <div class="card">
+        <div class="table-head">
+          <h2>历史上班记录</h2>
+          <span class="meta" id="historyStats">0 条记录</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>上班</th>
+                <th>下班</th>
+                <th>有效时长</th>
+                <th>摸鱼</th>
+                <th>暂停</th>
+                <th>今日入账</th>
+                <th>每小时</th>
+                <th>来源</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="historyBody"></tbody>
+          </table>
+        </div>
+        <div class="danger-zone">
+          <button class="btn btn-danger btn-sm" id="clearHistoryBtn" type="button">清空历史记录</button>
+          <button class="btn btn-danger btn-sm" id="clearAllBtn" type="button">清空全部数据</button>
+          <span class="meta">清空操作不可撤销。</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast-wrap" id="toastWrap"></div>
+
+  <dialog id="checkoutDialog">
+    <div class="modal">
+      <h3>今日收工播报</h3>
+      <p id="checkoutText"></p>
+      <button class="btn btn-accent" id="closeDialogBtn" type="button">继续愉快生活</button>
+    </div>
+  </dialog>
+
+  <script>
+    const STORAGE_KEY = 'work-money-simulator-v2';
+    const VIEW_KEY = 'work-money-simulator-view';
+
+    const REGION_LIBRARY = {
+      beijing: { name: '北京', pension: 16, medical: 10, unemployment: 0.5, injury: 0.2, maternity: 0.8, fundRange: '5%-12%' },
+      shanghai: { name: '上海', pension: 16, medical: 9, unemployment: 0.5, injury: 0.16, maternity: 1, fundRange: '5%-12%' },
+      guangzhou: { name: '广州', pension: 14, medical: 6.35, unemployment: 0.32, injury: 0.2, maternity: 0.8, fundRange: '5%-12%' },
+      shenzhen: { name: '深圳', pension: 16, medical: 6.2, unemployment: 0.7, injury: 0.14, maternity: 0.45, fundRange: '5%-12%' },
+      hangzhou: { name: '杭州', pension: 14, medical: 9.5, unemployment: 0.5, injury: 0.2, maternity: 0.5, fundRange: '5%-12%' },
+      chengdu: { name: '成都', pension: 16, medical: 7.7, unemployment: 0.6, injury: 0.2, maternity: 0.8, fundRange: '5%-12%' }
+    };
+
+    const STATIC_HOLIDAYS = {
+      2025: new Set(['2025-01-01', '2025-01-28', '2025-01-29', '2025-01-30', '2025-01-31', '2025-02-01', '2025-02-02', '2025-04-04', '2025-04-05', '2025-04-06', '2025-05-01', '2025-05-02', '2025-05-03', '2025-05-04', '2025-05-05', '2025-06-01', '2025-06-02', '2025-10-01', '2025-10-02', '2025-10-03', '2025-10-04', '2025-10-05', '2025-10-06', '2025-10-07']),
+      2026: new Set(['2026-01-01', '2026-02-16', '2026-02-17', '2026-02-18', '2026-02-19', '2026-02-20', '2026-02-21', '2026-04-05', '2026-05-01', '2026-05-02', '2026-05-03', '2026-06-19', '2026-06-20', '2026-09-25', '2026-09-26', '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05', '2026-10-06', '2026-10-07'])
+    };
+
+    const holidayCache = {};
+
+    const defaultSettings = {
+      monthlySalary: 20000,
+      dailyHours: 8,
+      employmentStartDate: toDateInputValue(new Date(new Date().getFullYear(), new Date().getMonth(), 1)),
+      region: 'beijing',
+      housingFundRate: 12,
+      policyUpdatedAt: null
+    };
+
+    const state = {
+      settings: { ...defaultSettings },
+      history: [],
+      session: null
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    init();
+
+    function init() {
+      hydrate();
+      initRegionSelect();
+      bindInputs();
+      bindButtons();
+      restoreView();
+      renderAll();
+      preloadHolidayYears();
+      setInterval(tickClock, 1000);
+      setInterval(tickSession, 1000);
+    }
+
+    function hydrate() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) { return; }
+        const saved = JSON.parse(raw);
+        if (saved.settings) { state.settings = { ...defaultSettings, ...saved.settings }; }
+        if (Array.isArray(saved.history)) { state.history = saved.history; }
+        if (saved.session) { state.session = saved.session; }
+      } catch (err) {
+        console.error('读取本地数据失败', err);
+      }
+    }
+
+    function persist() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function initRegionSelect() {
+      $('region').innerHTML = Object.entries(REGION_LIBRARY)
+        .map(([key, item]) => `<option value="${key}">${item.name}</option>`)
+        .join('');
+    }
+
+    function bindInputs() {
+      updateSettingInputsFromState();
+      $('manualDate').value = toDateInputValue(new Date());
+    }
+
+    function bindButtons() {
+      // Tabs
+      document.querySelectorAll('.tab').forEach((btn) => {
+        btn.addEventListener('click', () => switchView(btn.dataset.view));
+      });
+      // Settings
+      $('saveSettingsBtn').addEventListener('click', saveSettings);
+      $('pullPolicyBtn').addEventListener('click', pullPolicy);
+      $('manualAddBtn').addEventListener('click', addManualRecord);
+      // Console controls (toggles)
+      $('primaryBtn').addEventListener('click', togglePrimary);
+      $('pauseBtn').addEventListener('click', togglePause);
+      $('fishBtn').addEventListener('click', toggleFishMode);
+      // Data management
+      $('clearHistoryBtn').addEventListener('click', clearHistory);
+      $('clearAllBtn').addEventListener('click', clearAllData);
+      // History row delete (event delegation)
+      $('historyBody').addEventListener('click', (e) => {
+        const target = e.target.closest('[data-del]');
+        if (target) { deleteHistory(target.dataset.del); }
+      });
+      $('closeDialogBtn').addEventListener('click', () => $('checkoutDialog').close());
+    }
+
+    function switchView(name) {
+      document.querySelectorAll('.tab').forEach((t) => {
+        t.setAttribute('aria-selected', String(t.dataset.view === name));
+      });
+      $('view-console').classList.toggle('active', name === 'console');
+      $('view-settings').classList.toggle('active', name === 'settings');
+      try { localStorage.setItem(VIEW_KEY, name); } catch (err) { /* ignore */ }
+    }
+
+    function restoreView() {
+      let saved = 'console';
+      try { saved = localStorage.getItem(VIEW_KEY) || 'console'; } catch (err) { /* ignore */ }
+      if (saved !== 'console' && saved !== 'settings') { saved = 'console'; }
+      switchView(saved);
+    }
+
+    function saveSettings() {
+      const monthlySalary = Number($('monthlySalary').value || 0);
+      const dailyHours = Number($('dailyHours').value || 0);
+      const employmentStartDate = $('employmentStartDate').value;
+      const region = $('region').value;
+      const housingFundRate = Number($('housingFundRate').value || 0);
+
+      if (!monthlySalary || monthlySalary <= 0) { toast('请先填写正确的月薪。'); return; }
+      if (!dailyHours || dailyHours <= 0) { toast('每天上班时长需要大于 0。'); return; }
+      if (!employmentStartDate) { toast('请选择开始上班日期。'); return; }
+
+      state.settings = { ...state.settings, monthlySalary, dailyHours, employmentStartDate, region, housingFundRate };
+      persist();
+      renderAll();
+      toast('设置已保存。');
+      preloadHolidayYears();
+    }
+
+    async function pullPolicy() {
+      const region = $('region').value;
+      $('pullPolicyBtn').disabled = true;
+      $('pullPolicyBtn').textContent = '拉取中...';
+      try {
+        await wait(650);
+        state.settings.region = region;
+        state.settings.policyUpdatedAt = new Date().toISOString();
+        persist();
+        renderPolicy();
+        renderSummary();
+        toast(`已拉取 ${REGION_LIBRARY[region].name} 的五险一金快照。`);
+      } finally {
+        $('pullPolicyBtn').disabled = false;
+        $('pullPolicyBtn').textContent = '拉取地区政策';
+      }
+    }
+
+    // ----- Console toggle handlers -----
+    function togglePrimary() {
+      if (!state.session || state.session.status === 'idle') {
+        clockIn();
+      } else {
+        clockOut();
+      }
+    }
+
+    function togglePause() {
+      if (!state.session || state.session.status === 'idle') {
+        toast('还没上班，无法暂停。');
+        return;
+      }
+      if (state.session.status === 'paused') {
+        resumeWork();
+      } else {
+        pauseWork();
+      }
+    }
+
+    function clockIn() {
+      if (state.session && state.session.status !== 'idle') {
+        toast('你已经在上班中了。');
+        return;
+      }
+      const now = Date.now();
+      state.session = {
+        status: 'working',
+        clockInTs: now,
+        lastTickTs: now,
+        activeMs: 0,
+        fishMs: 0,
+        pauseMs: 0,
+        bankedActiveMs: 0,
+        earned: 0,
+        minuteCount: 0,
+        date: toDateKey(new Date(now))
+      };
+      persist();
+      renderRuntime();
+      toast('上班打卡成功，开始收钱。');
+      showerCoins(8);
+    }
+
+    function pauseWork() {
+      state.session.status = 'paused';
+      state.session.lastTickTs = Date.now();
+      persist();
+      renderRuntime();
+      toast('已暂停，暂停期间不入账。');
+    }
+
+    function resumeWork() {
+      state.session.status = 'working';
+      state.session.lastTickTs = Date.now();
+      persist();
+      renderRuntime();
+      toast('继续上班，恢复按分钟入账。');
+    }
+
+    function toggleFishMode() {
+      if (!state.session || state.session.status === 'idle') {
+        toast('先上班，再进入摸鱼模式。');
+        return;
+      }
+      if (state.session.status === 'paused') {
+        toast('暂停中不能摸鱼，请先继续。');
+        return;
+      }
+      state.session.status = state.session.status === 'fishing' ? 'working' : 'fishing';
+      state.session.lastTickTs = Date.now();
+      persist();
+      renderRuntime();
+      toast(state.session.status === 'fishing' ? '摸鱼模式开启，依然入账。' : '摸鱼模式关闭，回到认真上班。');
+    }
+
+    function clockOut() {
+      if (!state.session || state.session.status === 'idle') {
+        toast('你还没有上班记录。');
+        return;
+      }
+      const session = state.session;
+      const now = Date.now();
+      const finalActiveMs = session.activeMs;
+      const hourly = finalActiveMs > 0 ? session.earned / (finalActiveMs / 3600000) : 0;
+
+      state.history.unshift({
+        id: `r-${now}`,
+        date: session.date,
+        startTs: session.clockInTs,
+        endTs: now,
+        activeMs: finalActiveMs,
+        fishMs: session.fishMs,
+        pauseMs: session.pauseMs,
+        earned: session.earned,
+        hourly,
+        source: '实时打卡'
+      });
+
+      state.session = null;
+      persist();
+      renderAll();
+      showCheckoutDialog(session.earned, finalActiveMs, hourly);
+      toast('今天辛苦啦，已下班。');
+    }
+
+    function addManualRecord() {
+      const date = $('manualDate').value;
+      const startTime = $('manualStart').value;
+      const endTime = $('manualEnd').value;
+      const breakMinutes = Number($('manualBreak').value || 0);
+      if (!date || !startTime || !endTime) { toast('请把补录时间填完整。'); return; }
+
+      const start = new Date(`${date}T${startTime}:00`);
+      const end = new Date(`${date}T${endTime}:00`);
+      if (end <= start) { toast('下班时间要晚于上班时间。'); return; }
+
+      const total = end.getTime() - start.getTime();
+      const activeMs = Math.max(0, total - breakMinutes * 60000);
+      if (activeMs <= 0) { toast('有效时长不能小于等于 0。'); return; }
+
+      const rate = getPerMinuteIncome(start);
+      const earned = (activeMs / 60000) * rate;
+      const hourly = earned / (activeMs / 3600000);
+
+      state.history.unshift({
+        id: `m-${Date.now()}`,
+        date,
+        startTs: start.getTime(),
+        endTs: end.getTime(),
+        activeMs,
+        fishMs: 0,
+        pauseMs: breakMinutes * 60000,
+        earned,
+        hourly,
+        source: '手动补录'
+      });
+
+      persist();
+      renderHistory();
+      renderSummary();
+      renderRuntime();
+      toast('历史记录已补录。');
+    }
+
+    function deleteHistory(id) {
+      const record = state.history.find((r) => r.id === id);
+      const label = record ? `${record.date} 的记录（${formatCurrency(record.earned || 0)}）` : '这条记录';
+      if (!confirm(`确定要删除 ${label} 吗？此操作不可撤销。`)) { return; }
+      state.history = state.history.filter((r) => r.id !== id);
+      persist();
+      renderHistory();
+      renderSummary();
+      renderRuntime();
+      toast('已删除该条记录。');
+    }
+
+    function clearHistory() {
+      if (state.history.length === 0) { toast('还没有历史记录。'); return; }
+      if (!confirm('确定要清空全部历史上班记录吗？此操作不可撤销。')) { return; }
+      state.history = [];
+      persist();
+      renderHistory();
+      renderSummary();
+      renderRuntime();
+      toast('历史记录已清空。');
+    }
+
+    function clearAllData() {
+      if (!confirm('确定要清空全部数据吗？包括设置、历史记录和当前上班状态，且不可撤销。')) { return; }
+      localStorage.removeItem(STORAGE_KEY);
+      state.settings = { ...defaultSettings };
+      state.history = [];
+      state.session = null;
+      bindInputs();
+      renderAll();
+      preloadHolidayYears();
+      toast('全部数据已清空，回到初始状态。');
+    }
+
+    function tickClock() {
+      $('clockNow').textContent = new Date().toLocaleString('zh-CN', {
+        hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+    }
+
+    function tickSession() {
+      if (!state.session) { return; }
+      const session = state.session;
+      const now = Date.now();
+      const delta = Math.max(0, now - session.lastTickTs);
+      session.lastTickTs = now;
+
+      if (session.status === 'working' || session.status === 'fishing') {
+        session.activeMs += delta;
+        session.bankedActiveMs += delta;
+        if (session.status === 'fishing') { session.fishMs += delta; }
+
+        const minuteRate = getPerMinuteIncome(new Date(now));
+        while (session.bankedActiveMs >= 60000) {
+          session.bankedActiveMs -= 60000;
+          session.earned += minuteRate;
+          session.minuteCount += 1;
+          toast(`本分钟入账 ${formatCurrency(minuteRate)}，继续冲。`);
+          showerCoins(5);
+        }
+      } else if (session.status === 'paused') {
+        session.pauseMs += delta;
+      }
+
+      persist();
+      renderRuntime();
+    }
+
+    function renderAll() {
+      renderPolicy();
+      renderRuntime();
+      renderHistory();
+      renderSummary();
+      updateSettingInputsFromState();
+      tickClock();
+    }
+
+    function updateSettingInputsFromState() {
+      $('monthlySalary').value = state.settings.monthlySalary;
+      $('dailyHours').value = state.settings.dailyHours;
+      $('employmentStartDate').value = state.settings.employmentStartDate;
+      $('region').value = state.settings.region;
+      $('housingFundRate').value = state.settings.housingFundRate;
+    }
+
+    function renderPolicy() {
+      const policy = REGION_LIBRARY[state.settings.region] || REGION_LIBRARY.beijing;
+      $('policyGrid').innerHTML = [
+        card('地区', policy.name),
+        card('养老（公司）', `${policy.pension}%`),
+        card('医疗（公司）', `${policy.medical}%`),
+        card('失业（公司）', `${policy.unemployment}%`),
+        card('工伤（公司）', `${policy.injury}%`),
+        card('生育（公司）', `${policy.maternity}%`),
+        card('公积金常见区间', policy.fundRange),
+        card('你设置的公司公积金', `${state.settings.housingFundRate}%`),
+        card('总公司社保比例', `${(policy.pension + policy.medical + policy.unemployment + policy.injury + policy.maternity).toFixed(2)}%`)
+      ].join('');
+
+      const updatedAt = state.settings.policyUpdatedAt
+        ? new Date(state.settings.policyUpdatedAt).toLocaleString('zh-CN', { hour12: false })
+        : '未拉取，使用内置快照';
+      $('policyMeta').textContent = `政策更新时间：${updatedAt}`;
+    }
+
+    function renderRuntime() {
+      const session = state.session;
+      const stateEl = $('sessionState');
+      const stageText = $('moneyLabel');
+      const primaryBtn = $('primaryBtn');
+      const pauseBtn = $('pauseBtn');
+      const fishBtn = $('fishBtn');
+
+      const earned = session ? session.earned : 0;
+      $('moneyCore').textContent = formatCurrency(earned);
+      $('todayEarned').textContent = formatCurrency(earned);
+      $('todayDuration').textContent = formatDuration(session ? session.activeMs : 0);
+
+      if (!session) {
+        stateEl.className = 'pill state-idle';
+        stateEl.textContent = '未上班';
+        stageText.textContent = '等待上班指令';
+
+        primaryBtn.textContent = '开始上班';
+        primaryBtn.classList.remove('is-off');
+        primaryBtn.classList.add('btn-accent');
+
+        pauseBtn.textContent = '暂停';
+        pauseBtn.disabled = true;
+        fishBtn.textContent = '摸鱼开始';
+        fishBtn.disabled = true;
+      } else {
+        primaryBtn.textContent = '下班';
+        primaryBtn.classList.add('is-off');
+        primaryBtn.classList.remove('btn-accent');
+
+        if (session.status === 'working') {
+          stateEl.className = 'pill state-working';
+          stateEl.textContent = '上班中';
+          stageText.textContent = '稳定入账中';
+        }
+        if (session.status === 'paused') {
+          stateEl.className = 'pill state-paused';
+          stateEl.textContent = '暂停中';
+          stageText.textContent = '暂停不计薪';
+        }
+        if (session.status === 'fishing') {
+          stateEl.className = 'pill state-fishing';
+          stateEl.textContent = '摸鱼中（继续入账）';
+          stageText.textContent = '人在摸鱼，钱在上班';
+        }
+
+        pauseBtn.disabled = false;
+        pauseBtn.textContent = session.status === 'paused' ? '继续' : '暂停';
+
+        fishBtn.disabled = session.status === 'paused';
+        fishBtn.textContent = session.status === 'fishing' ? '摸鱼结束' : '摸鱼开始';
+      }
+
+      $('minuteRate').textContent = formatCurrency(getPerMinuteIncome(new Date()));
+      $('careerTotal').textContent = formatCurrency(calculateCareerTotalIncome());
+    }
+
+    function renderHistory() {
+      const body = $('historyBody');
+      if (state.history.length === 0) {
+        body.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#6e6e73;padding:20px;">暂无历史记录，去主控台点开始上班吧。</td></tr>';
+      } else {
+        body.innerHTML = state.history
+          .slice(0, 300)
+          .map((r) => {
+            const tagClass = r.source === '实时打卡' ? 'tag tag-live' : 'tag';
+            return `<tr>
+              <td>${r.date}</td>
+              <td>${formatTime(r.startTs)}</td>
+              <td>${formatTime(r.endTs)}</td>
+              <td>${formatDuration(r.activeMs)}</td>
+              <td>${formatDuration(r.fishMs || 0)}</td>
+              <td>${formatDuration(r.pauseMs || 0)}</td>
+              <td>${formatCurrency(r.earned || 0)}</td>
+              <td>${formatCurrency(r.hourly || 0)}</td>
+              <td><span class="${tagClass}">${r.source || '未知'}</span></td>
+              <td><button class="btn btn-danger btn-sm" type="button" data-del="${r.id}">删除</button></td>
+            </tr>`;
+          })
+          .join('');
+      }
+
+      const totalEarned = state.history.reduce((sum, r) => sum + (r.earned || 0), 0);
+      $('historyStats').textContent = `${state.history.length} 条记录，累计入账 ${formatCurrency(totalEarned)}`;
+    }
+
+    function renderSummary() {
+      const cards = buildMonthCards();
+      $('monthCards').innerHTML = cards
+        .slice(-18)
+        .reverse()
+        .map((item) => {
+          return `<article class="month-card">
+            <strong>${item.month}</strong>
+            <div>工作日：${item.workdays} 天</div>
+            <div>理论工资：${formatCurrency(item.theorySalary)}</div>
+            <div>公司公积金：${formatCurrency(item.fundComp)}</div>
+            <div>理论总收入：${formatCurrency(item.theoryTotal)}</div>
+            <div>历史实收：${formatCurrency(item.actualEarned)}</div>
+          </article>`;
+        })
+        .join('');
+
+      if (cards.length > 0) {
+        const totalTheory = cards.reduce((sum, m) => sum + m.theoryTotal, 0);
+        const totalActual = cards.reduce((sum, m) => sum + m.actualEarned, 0);
+        $('monthSummaryText').textContent = `从 ${state.settings.employmentStartDate} 到今天：理论总收入（含公积金）${formatCurrency(totalTheory)}，历史实收 ${formatCurrency(totalActual)}。`;
+      } else {
+        $('monthSummaryText').textContent = '暂无可统计的月份。';
+      }
+    }
+
+    function buildMonthCards() {
+      const start = new Date(`${state.settings.employmentStartDate}T00:00:00`);
+      const now = new Date();
+      if (Number.isNaN(start.getTime()) || start > now) { return []; }
+
+      const cards = [];
+      const pointer = new Date(start.getFullYear(), start.getMonth(), 1);
+      while (pointer <= now) {
+        const year = pointer.getFullYear();
+        const month = pointer.getMonth();
+        const monthStart = new Date(year, month, 1);
+        const monthEnd = new Date(year, month + 1, 0);
+        const effectiveStart = monthStart < start ? start : monthStart;
+        const effectiveEnd = monthEnd > now ? now : monthEnd;
+
+        const workdays = countWorkdays(effectiveStart, effectiveEnd);
+        const fullWorkdays = countWorkdays(monthStart, monthEnd);
+        const theorySalary = fullWorkdays === 0 ? 0 : (state.settings.monthlySalary * workdays) / fullWorkdays;
+        const fundComp = theorySalary * (state.settings.housingFundRate / 100);
+        const theoryTotal = theorySalary + fundComp;
+
+        const key = `${year}-${String(month + 1).padStart(2, '0')}`;
+        const actualEarned = state.history
+          .filter((r) => r.date && r.date.startsWith(key))
+          .reduce((sum, r) => sum + (r.earned || 0), 0);
+
+        cards.push({ month: key, workdays, theorySalary, fundComp, theoryTotal, actualEarned });
+        pointer.setMonth(pointer.getMonth() + 1);
+      }
+      return cards;
+    }
+
+    function calculateCareerTotalIncome() {
+      return buildMonthCards().reduce((sum, m) => sum + m.theoryTotal, 0);
+    }
+
+    function getPerMinuteIncome(dateObj) {
+      const workdays = countWorkdays(new Date(dateObj.getFullYear(), dateObj.getMonth(), 1), new Date(dateObj.getFullYear(), dateObj.getMonth() + 1, 0));
+      const minutes = Math.max(1, workdays * state.settings.dailyHours * 60);
+      return state.settings.monthlySalary / minutes;
+    }
+
+    function countWorkdays(startDate, endDate) {
+      const start = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+      const end = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+      if (start > end) { return 0; }
+
+      let count = 0;
+      const cursor = new Date(start);
+      while (cursor <= end) {
+        const weekend = cursor.getDay() === 0 || cursor.getDay() === 6;
+        const holiday = isHoliday(cursor);
+        if (!weekend && !holiday) { count += 1; }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return count;
+    }
+
+    function isHoliday(dateObj) {
+      const year = dateObj.getFullYear();
+      const dateKey = toDateKey(dateObj);
+      const set = holidayCache[year] || STATIC_HOLIDAYS[year];
+      return set ? set.has(dateKey) : false;
+    }
+
+    async function preloadHolidayYears() {
+      const startYear = new Date(`${state.settings.employmentStartDate}T00:00:00`).getFullYear();
+      const endYear = new Date().getFullYear();
+      for (let year = startYear; year <= endYear; year += 1) {
+        await ensureHolidayYear(year);
+      }
+      renderSummary();
+      renderRuntime();
+    }
+
+    async function ensureHolidayYear(year) {
+      if (holidayCache[year]) { return; }
+      try {
+        const res = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/CN`);
+        if (!res.ok) { throw new Error('holiday fetch failed'); }
+        const json = await res.json();
+        holidayCache[year] = new Set((json || []).map((item) => item.date));
+      } catch (err) {
+        holidayCache[year] = STATIC_HOLIDAYS[year] || new Set();
+      }
+    }
+
+    function showCheckoutDialog(earned, activeMs, hourly) {
+      const text = `今天总共有效上班 ${formatDuration(activeMs)}，入账 ${formatCurrency(earned)}，折算每小时 ${formatCurrency(hourly)}。`;
+      $('checkoutText').textContent = text;
+      $('checkoutDialog').showModal();
+    }
+
+    function toast(message) {
+      const wrap = $('toastWrap');
+      const item = document.createElement('div');
+      item.className = 'toast';
+      item.textContent = message;
+      wrap.appendChild(item);
+      setTimeout(() => item.remove(), 3200);
+    }
+
+    function showerCoins(count) {
+      const stage = $('stage');
+      for (let i = 0; i < count; i += 1) {
+        const coin = document.createElement('span');
+        coin.className = 'coin';
+        coin.textContent = '¥';
+        coin.style.left = `${8 + Math.random() * 84}%`;
+        coin.style.animationDelay = `${Math.random() * 0.28}s`;
+        stage.appendChild(coin);
+        setTimeout(() => coin.remove(), 1400);
+      }
+    }
+
+    function card(title, value) {
+      return `<div class="policy-item"><strong>${title}</strong>${value}</div>`;
+    }
+
+    function wait(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    function toDateKey(dateObj) {
+      const y = dateObj.getFullYear();
+      const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const d = String(dateObj.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function toDateInputValue(dateObj) {
+      return toDateKey(dateObj);
+    }
+
+    function formatTime(ts) {
+      if (!ts) { return '-'; }
+      return new Date(ts).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+    }
+
+    function formatCurrency(value) {
+      return new Intl.NumberFormat('zh-CN', {
+        style: 'currency', currency: 'CNY',
+        minimumFractionDigits: 2, maximumFractionDigits: 2
+      }).format(Number(value || 0));
+    }
+
+    function formatDuration(ms) {
+      const totalMin = Math.floor((Number(ms || 0) / 60000));
+      const h = Math.floor(totalMin / 60);
+      const m = totalMin % 60;
+      return `${h}h ${m}m`;
+    }
+  </script>
+</body>
+</html>
