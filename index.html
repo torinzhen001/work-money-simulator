@@ -757,9 +757,19 @@
     const STORAGE_KEY = 'work-money-simulator-v2';
     const VIEW_KEY = 'work-money-simulator-view';
 
-    // 个人自付五险比例（养聰8% + 医疗2% + 失业0.5%）与个税起征点
-    const PERSONAL_SOCIAL_RATE = 10.5;
+    // 个税起征点（每月 5000，年内累计）
     const TAX_THRESHOLD = 5000;
+
+    // 年度累计预扣预缴税率表（累计应纳税所得额 / 税率 / 速算扣除数）
+    const ANNUAL_TAX_BRACKETS = [
+      [36000, 0.03, 0],
+      [144000, 0.10, 2520],
+      [300000, 0.20, 16920],
+      [420000, 0.25, 31920],
+      [660000, 0.30, 52920],
+      [960000, 0.35, 85920],
+      [Infinity, 0.45, 181920]
+    ];
 
     // ----- 云同步（Supabase）-----
     const SUPABASE_URL = 'https://cqgzxphryzknhscvhbyn.supabase.co';
@@ -772,12 +782,12 @@
     let selectedYear = 'all';
 
     const REGION_LIBRARY = {
-      beijing: { name: '北京', pension: 16, medical: 10, unemployment: 0.5, injury: 0.2, maternity: 0.8, fundRange: '5%-12%' },
-      shanghai: { name: '上海', pension: 16, medical: 9, unemployment: 0.5, injury: 0.16, maternity: 1, fundRange: '5%-12%' },
-      guangzhou: { name: '广州', pension: 14, medical: 6.35, unemployment: 0.32, injury: 0.2, maternity: 0.8, fundRange: '5%-12%' },
-      shenzhen: { name: '深圳', pension: 16, medical: 6.2, unemployment: 0.7, injury: 0.14, maternity: 0.45, fundRange: '5%-12%' },
-      hangzhou: { name: '杭州', pension: 14, medical: 9.5, unemployment: 0.5, injury: 0.2, maternity: 0.5, fundRange: '5%-12%' },
-      chengdu: { name: '成都', pension: 16, medical: 7.7, unemployment: 0.6, injury: 0.2, maternity: 0.8, fundRange: '5%-12%' }
+      beijing: { name: '北京', pension: 16, medical: 10, unemployment: 0.5, injury: 0.2, maternity: 0.8, fundRange: '5%-12%', pPension: 8, pMedical: 2, pUnemployment: 0.5 },
+      shanghai: { name: '上海', pension: 16, medical: 9, unemployment: 0.5, injury: 0.16, maternity: 1, fundRange: '5%-12%', pPension: 8, pMedical: 2, pUnemployment: 0.5 },
+      guangzhou: { name: '广州', pension: 14, medical: 6.35, unemployment: 0.32, injury: 0.2, maternity: 0.8, fundRange: '5%-12%', pPension: 8, pMedical: 2, pUnemployment: 0.2 },
+      shenzhen: { name: '深圳', pension: 16, medical: 6.2, unemployment: 0.7, injury: 0.14, maternity: 0.45, fundRange: '5%-12%', pPension: 8, pMedical: 2, pUnemployment: 0.3 },
+      hangzhou: { name: '杭州', pension: 14, medical: 9.5, unemployment: 0.5, injury: 0.2, maternity: 0.5, fundRange: '5%-12%', pPension: 8, pMedical: 2, pUnemployment: 0.5 },
+      chengdu: { name: '成都', pension: 16, medical: 7.7, unemployment: 0.6, injury: 0.2, maternity: 0.8, fundRange: '5%-12%', pPension: 8, pMedical: 2, pUnemployment: 0.4 }
     };
 
     const STATIC_HOLIDAYS = {
@@ -1355,16 +1365,20 @@
 
     function renderPolicy() {
       const policy = REGION_LIBRARY[state.settings.region] || REGION_LIBRARY.beijing;
+      const pSocial = (policy.pPension || 0) + (policy.pMedical || 0) + (policy.pUnemployment || 0);
       $('policyGrid').innerHTML = [
         card('地区', policy.name),
+        card('养老（个人）', `${policy.pPension}%`),
+        card('医疗（个人）', `${policy.pMedical}%`),
+        card('失业（个人）', `${policy.pUnemployment}%`),
+        card('个人社保合计', `${pSocial.toFixed(2)}%`),
         card('养老（公司）', `${policy.pension}%`),
         card('医疗（公司）', `${policy.medical}%`),
         card('失业（公司）', `${policy.unemployment}%`),
         card('工伤（公司）', `${policy.injury}%`),
         card('生育（公司）', `${policy.maternity}%`),
         card('公积金常见区间', policy.fundRange),
-        card('你设置的公司公积金', `${state.settings.housingFundRate}%`),
-        card('总公司社保比例', `${(policy.pension + policy.medical + policy.unemployment + policy.injury + policy.maternity).toFixed(2)}%`)
+        card('你设置的公积金比例', `${state.settings.housingFundRate}%`)
       ].join('');
 
       const updatedAt = state.settings.policyUpdatedAt
@@ -1541,8 +1555,17 @@
       const now = new Date();
       if (Number.isNaN(start.getTime()) || start > now) { return []; }
 
+      const region = REGION_LIBRARY[state.settings.region] || REGION_LIBRARY.beijing;
+      const personalSocialRate = (region.pPension || 0) + (region.pMedical || 0) + (region.pUnemployment || 0);
+      const personalFundRate = state.settings.housingFundRate;
+
       const cards = [];
       const pointer = new Date(start.getFullYear(), start.getMonth(), 1);
+      // 累计预扣：按自然年累计，跨年清零
+      let cumYear = null;
+      let cumTaxable = 0;
+      let cumTaxPaid = 0;
+
       while (pointer <= now) {
         const year = pointer.getFullYear();
         const month = pointer.getMonth();
@@ -1557,19 +1580,20 @@
         const fundComp = theorySalary * (state.settings.housingFundRate / 100);
         const theoryTotal = theorySalary + fundComp;
 
-        // 个人自付：五险一金（个人部分）+ 个人所得税，基于全月工资算税档再按出勤比例折算
-        const fullSalary = state.settings.monthlySalary;
-        const ratio = fullWorkdays === 0 ? 0 : workdays / fullWorkdays;
-        const fullPersonalSocial = fullSalary * (PERSONAL_SOCIAL_RATE / 100);
-        const fullPersonalFund = fullSalary * (state.settings.housingFundRate / 100);
-        const fullTaxable = Math.max(0, fullSalary - fullPersonalSocial - fullPersonalFund - TAX_THRESHOLD);
-        const fullTax = calcMonthlyTax(fullTaxable);
-        const fullNet = fullSalary - fullPersonalSocial - fullPersonalFund - fullTax;
+        // 本月个人自付（按实际出勤折算后的税前工资计算）
+        const gross = theorySalary;
+        const personalSocial = gross * (personalSocialRate / 100);
+        const personalFund = gross * (personalFundRate / 100);
 
-        const personalSocial = fullPersonalSocial * ratio;
-        const personalFund = fullPersonalFund * ratio;
-        const personalTax = fullTax * ratio;
-        const netTakeHome = fullNet * ratio;
+        // 累计预扣预缴：跨年清零
+        if (cumYear !== year) { cumYear = year; cumTaxable = 0; cumTaxPaid = 0; }
+        const monthTaxable = gross - personalSocial - personalFund - TAX_THRESHOLD;
+        cumTaxable += monthTaxable;
+        const cumTax = calcCumulativeTax(Math.max(0, cumTaxable));
+        const personalTax = Math.max(0, cumTax - cumTaxPaid);
+        cumTaxPaid += personalTax;
+
+        const netTakeHome = gross - personalSocial - personalFund - personalTax;
 
         const key = `${year}-${String(month + 1).padStart(2, '0')}`;
         const actualEarned = state.history
@@ -1585,22 +1609,13 @@
       return cards;
     }
 
-    // 个人所得税（简化月度税率表，起征点 5000）
-    function calcMonthlyTax(taxable) {
-      if (taxable <= 0) { return 0; }
-      const brackets = [
-        [3000, 0.03, 0],
-        [12000, 0.10, 210],
-        [25000, 0.20, 1410],
-        [35000, 0.25, 2660],
-        [55000, 0.30, 4410],
-        [80000, 0.35, 7160],
-        [Infinity, 0.45, 15160]
-      ];
-      for (const [cap, rate, deduct] of brackets) {
-        if (taxable <= cap) { return taxable * rate - deduct; }
+    // 按累计应纳税所得额计算全年应缴个税（累计预扣法）
+    function calcCumulativeTax(cumTaxable) {
+      if (cumTaxable <= 0) { return 0; }
+      for (const [cap, rate, deduct] of ANNUAL_TAX_BRACKETS) {
+        if (cumTaxable <= cap) { return cumTaxable * rate - deduct; }
       }
-      return taxable * 0.45 - 15160;
+      return cumTaxable * 0.45 - 181920;
     }
 
     function calculateCareerTotalIncome() {
