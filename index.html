@@ -697,6 +697,27 @@
       </div>
 
       <div class="card">
+        <h2>我的调班</h2>
+        <p class="sub">登记需要额外上班的日子（例如周末调班）。调班会增加当月工作日，从而降低日薪与时薪。</p>
+        <div class="grid">
+          <label>调班说明（可选）
+            <input id="makeupName" type="text" placeholder="例如：周六调班 / 加班日" />
+          </label>
+          <label>开始日期
+            <input id="makeupStart" type="date" />
+          </label>
+          <label>结束日期（可选，默认同开始）
+            <input id="makeupEnd" type="date" />
+          </label>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-accent" id="addMakeupBtn" type="button">添加调班</button>
+          <span class="meta">只统计原本不上班的日子（周末或法定节假日）新增的工作日。</span>
+        </div>
+        <div id="makeupList" style="margin-top:12px;"></div>
+      </div>
+
+      <div class="card">
         <h2>云同步（多设备）</h2>
         <p class="sub">用同一个同步码，在其它电脑、手机或微信里打开同一份数据。</p>
         <div style="display:flex; gap:28px; flex-wrap:wrap; margin-bottom:16px;">
@@ -869,7 +890,8 @@
       region: 'beijing',
       housingFundRate: 12,
       policyUpdatedAt: null,
-      customHolidays: []
+      customHolidays: [],
+      makeupDays: []
     };
 
     const state = {
@@ -949,6 +971,12 @@
       $('holidayList').addEventListener('click', (e) => {
         const target = e.target.closest('[data-holiday-del]');
         if (target) { deleteCustomHoliday(target.dataset.holidayDel); }
+      });
+      // Makeup (shift) days
+      $('addMakeupBtn').addEventListener('click', addMakeupDay);
+      $('makeupList').addEventListener('click', (e) => {
+        const target = e.target.closest('[data-makeup-del]');
+        if (target) { deleteMakeupDay(target.dataset.makeupDel); }
       });
       // Console controls (toggles)
       $('primaryBtn').addEventListener('click', togglePrimary);
@@ -1077,6 +1105,72 @@
             <div class="meta">${range}　·　抵扣 ${days} 个工作日</div>
           </div>
           <button class="btn" type="button" data-holiday-del="${h.id}">删除</button>
+        </div>`;
+      }).join('');
+    }
+
+    // 调班在某段区间内“新增”的工作日：原本是周末或法定节假日的天数
+    function extraWorkdaysFromMakeup(startKey, endKey) {
+      let count = 0;
+      const cursor = new Date(`${startKey}T00:00:00`);
+      const end = new Date(`${endKey}T00:00:00`);
+      while (cursor <= end) {
+        const weekend = cursor.getDay() === 0 || cursor.getDay() === 6;
+        if (weekend || isHoliday(cursor)) { count += 1; }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return count;
+    }
+
+    function addMakeupDay() {
+      const name = $('makeupName').value.trim();
+      const start = $('makeupStart').value;
+      const endRaw = $('makeupEnd').value;
+      if (!start) { toast('请选择调班开始日期。'); return; }
+      const end = endRaw || start;
+      if (end < start) { toast('结束日期不能早于开始日期。'); return; }
+
+      if (!Array.isArray(state.settings.makeupDays)) { state.settings.makeupDays = []; }
+      state.settings.makeupDays.push({
+        id: `m-${Date.now()}`,
+        name: name || '调班',
+        start,
+        end
+      });
+      state.settings.makeupDays.sort((a, b) => a.start.localeCompare(b.start));
+      persist();
+      renderAll();
+      $('makeupName').value = '';
+      $('makeupStart').value = '';
+      $('makeupEnd').value = '';
+      toast('调班已添加，日薪与时薪已更新。');
+    }
+
+    function deleteMakeupDay(id) {
+      if (!Array.isArray(state.settings.makeupDays)) { return; }
+      state.settings.makeupDays = state.settings.makeupDays.filter((m) => m.id !== id);
+      persist();
+      renderAll();
+      toast('调班已删除。');
+    }
+
+    function renderMakeupDays() {
+      const box = $('makeupList');
+      if (!box) { return; }
+      const list = state.settings.makeupDays || [];
+      if (!list.length) {
+        box.innerHTML = '<div class="meta">还没有添加调班。</div>';
+        return;
+      }
+      box.innerHTML = list.map((m) => {
+        const range = m.end && m.end !== m.start ? `${m.start} ~ ${m.end}` : m.start;
+        const days = extraWorkdaysFromMakeup(m.start, m.end || m.start);
+        return `<div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid rgba(148,163,184,0.18);">
+          <div>
+            <div style="font-weight:600;">${escapeHtml(m.name || '调班')}</div>
+            <div class="meta">${range}　·　新增 ${days} 个工作日</div>
+          </div>
+          <button class="btn" type="button" data-makeup-del="${m.id}">删除</button>
         </div>`;
       }).join('');
     }
@@ -1567,6 +1661,7 @@
       $('region').value = state.settings.region;
       $('housingFundRate').value = state.settings.housingFundRate;
       renderCustomHolidays();
+      renderMakeupDays();
     }
 
     function renderPolicy() {
@@ -1759,7 +1854,8 @@
         .map((item) => {
           return `<article class="month-card">
             <strong>${item.month}</strong>
-            <div>工作日：${item.workdays} 天</div>
+            <div>工作日：${item.workdays} 天${item.workdays !== item.fullWorkdays ? ` / 全月 ${item.fullWorkdays} 天` : ''}</div>
+            <div class="meta">日薪 ${formatCurrency(item.dailyWage)} · 时薪 ${formatCurrency(item.hourlyWage)}</div>
             <div class="net">到手工资：${formatCurrency(item.netTakeHome)}</div>
             <div class="fund">公积金到账：+${formatCurrency(item.fundIncome)}</div>
           </article>`;
@@ -1814,14 +1910,19 @@
         // 公积金到账 = 个人划扣 + 公司同比例补贴（都进你的公积金账户）
         const fundIncome = personalFund + fundComp;
 
+        // 当月日薪与时薪：按月薪 ÷ 当月实际工作日（含假期/调班），不受出勤进度影响
+        const dailyWage = fullWorkdays > 0 ? state.settings.monthlySalary / fullWorkdays : 0;
+        const hourlyWage = state.settings.dailyHours > 0 ? dailyWage / state.settings.dailyHours : 0;
+
         const key = `${year}-${String(month + 1).padStart(2, '0')}`;
         const actualEarned = state.history
           .filter((r) => r.date && r.date.startsWith(key))
           .reduce((sum, r) => sum + (r.earned || 0), 0);
 
         cards.push({
-          month: key, workdays, theorySalary, fundComp, theoryTotal, actualEarned,
-          personalSocial, personalFund, personalTax, netTakeHome, fundIncome
+          month: key, workdays, fullWorkdays, theorySalary, fundComp, theoryTotal, actualEarned,
+          personalSocial, personalFund, personalTax, netTakeHome, fundIncome,
+          dailyWage, hourlyWage
         });
         pointer.setMonth(pointer.getMonth() + 1);
       }
@@ -1866,7 +1967,9 @@
         const weekend = cursor.getDay() === 0 || cursor.getDay() === 6;
         const holiday = isHoliday(cursor);
         const custom = isCustomHoliday(cursor);
-        if (!weekend && !holiday && !custom) { count += 1; }
+        const makeup = isMakeupDay(cursor);
+        // 调班日强制计为工作日；否则非周末、非节假日、非自定义假期才算工作日
+        if (makeup || (!weekend && !holiday && !custom)) { count += 1; }
         cursor.setDate(cursor.getDate() + 1);
       }
       return count;
@@ -1880,6 +1983,18 @@
         if (!h.start) { continue; }
         const end = h.end || h.start;
         if (key >= h.start && key <= end) { return true; }
+      }
+      return false;
+    }
+
+    // 调班：落在调班区间内的日期强制视为上班
+    function isMakeupDay(dateObj) {
+      const key = toDateKey(dateObj);
+      const list = state.settings.makeupDays || [];
+      for (const m of list) {
+        if (!m.start) { continue; }
+        const end = m.end || m.start;
+        if (key >= m.start && key <= end) { return true; }
       }
       return false;
     }
