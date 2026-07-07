@@ -1,13 +1,9 @@
 ﻿param([string]$Message = "")
 $ErrorActionPreference = "Stop"
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-$source = "c:\Users\tori.zheng\Documents\外包管理工具\index.html"
-$deployDir = $PSScriptRoot
-$dest = Join-Path $deployDir "index.html"
-if (-not (Test-Path $source)) { Write-Host "Source not found: $source" -ForegroundColor Red; exit 1 }
-Set-Location $deployDir
-Copy-Item $source $dest -Force
-Write-Host "Synced index.html from main folder." -ForegroundColor Green
+# Self-contained: edit index.html in THIS repo folder, then run ./publish.ps1
+Set-Location $PSScriptRoot
+git pull --rebase origin main
 $changes = git status --porcelain
 if ([string]::IsNullOrWhiteSpace($changes)) { Write-Host "No changes. Site already up to date." -ForegroundColor Yellow; exit 0 }
 if ([string]::IsNullOrWhiteSpace($Message)) { $Message = "Update: " + (Get-Date -Format "yyyy-MM-dd HH:mm") }
