@@ -631,7 +631,7 @@
             <div class="kpi-val" id="todayDuration">0h 0m</div>
           </div>
           <div class="kpi-item">
-            <div class="kpi-key">今日实时时薪（日薪÷在岗）</div>
+            <div class="kpi-key">今日已赚（每小时跳一次）</div>
             <div class="kpi-val" id="liveHourly">¥0.00</div>
           </div>
           <div class="kpi-item">
@@ -1701,14 +1701,16 @@
       $('todayEarned').textContent = formatCurrency(earned);
       $('todayDuration').textContent = formatDuration(session ? session.activeMs : 0);
 
-      // 今日实时时薪：固定日薪 ÷ 在岗时长（摸鱼照样入账，不影响时薪）
+      // 今日已赚：按完整在岗小时累计，从 0 向当日日薪上升，每满一小时跳一次（封顶为当日日薪）
       const liveHourlyEl = $('liveHourly');
       if (session && session.activeMs > 0) {
         const now = new Date();
         const workdays = countWorkdays(new Date(now.getFullYear(), now.getMonth(), 1), new Date(now.getFullYear(), now.getMonth() + 1, 0));
         const dailyWage = workdays > 0 ? state.settings.monthlySalary / workdays : 0;
-        const liveHourly = dailyWage / (session.activeMs / 3600000);
-        liveHourlyEl.textContent = formatCurrency(liveHourly);
+        const dailyHours = Math.max(1, state.settings.dailyHours || 8);
+        const hoursWorked = Math.floor(session.activeMs / 3600000);
+        const earnedByHour = Math.min(dailyWage, hoursWorked * (dailyWage / dailyHours));
+        liveHourlyEl.textContent = formatCurrency(earnedByHour);
       } else {
         liveHourlyEl.textContent = formatCurrency(0);
       }
