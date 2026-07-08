@@ -1239,6 +1239,7 @@
         date: toDateKey(new Date(now))
       };
       persist();
+      pushToCloud(false);
       renderRuntime();
       toast('上班打卡成功，开始收钱。');
       showerCoins(8);
@@ -1248,6 +1249,7 @@
       state.session.status = 'paused';
       state.session.lastTickTs = Date.now();
       persist();
+      pushToCloud(false);
       renderRuntime();
       toast('已暂停，暂停期间不入账。');
     }
@@ -1256,6 +1258,7 @@
       state.session.status = 'working';
       state.session.lastTickTs = Date.now();
       persist();
+      pushToCloud(false);
       renderRuntime();
       toast('继续上班，恢复按分钟入账。');
     }
@@ -1272,6 +1275,7 @@
       state.session.status = state.session.status === 'fishing' ? 'working' : 'fishing';
       state.session.lastTickTs = Date.now();
       persist();
+      pushToCloud(false);
       renderRuntime();
       toast(state.session.status === 'fishing' ? '摸鱼模式开启，依然入账。' : '摸鱼模式关闭，回到认真上班。');
     }
